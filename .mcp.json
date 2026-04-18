@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "law": {
+      "command": "node",
+      "args": ["C:/projects/sentinel/mcp/law-mcp/dist/index.js"],
+      "env": {
+        "LAW_OC": "phw1985"
+      }
+    }
+  }
+}
