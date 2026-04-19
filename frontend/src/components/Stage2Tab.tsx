@@ -7,10 +7,13 @@ type InputMode = 'db' | 'manual';
 type Phase = 'idle' | 'running' | 'waiting' | 'confirmed';
 
 export default function Stage2Tab() {
-  const [inputMode, setInputMode]       = useState<InputMode>('db');
-  const [artifacts, setArtifacts]       = useState<Artifact[]>([]);
+  const [inputMode, setInputMode]       = useState<InputMode | 'stage2'>('db');
+  const [stage1Artifacts, setStage1Artifacts] = useState<Artifact[]>([]);
+  const [stage2Artifacts, setStage2Artifacts] = useState<Artifact[]>([]);
   const [selectedArtifactId, setSelectedArtifactId] = useState('');
+  const [selectedStage2ArtifactId, setSelectedStage2ArtifactId] = useState('');
   const [manualInput, setManualInput]   = useState('');
+  const [developmentNote, setDevelopmentNote] = useState('');
   const [customToc, setCustomToc]       = useState('');
   const [showCustomToc, setShowCustomToc] = useState(false);
   const [phase, setPhase]               = useState<Phase>('idle');
@@ -26,9 +29,7 @@ export default function Stage2Tab() {
   const logIdRef     = useRef(0);
 
   useEffect(() => {
-    api.getArtifacts({ stage: 'STAGE_1', status: 'confirmed' })
-      .then(setArtifacts)
-      .catch(console.error);
+    refreshArtifacts().catch(console.error);
   }, []);
 
   function addLog(text: string, kind: LogEntry['kind']) {
@@ -103,6 +104,16 @@ export default function Stage2Tab() {
     const { artifact: a } = await api.getSession(sessionIdRef.current);
     setReport(a);
     setPhase('waiting');
+    await refreshArtifacts();
+  }
+
+  async function refreshArtifacts() {
+    const [stage1, stage2] = await Promise.all([
+      api.getArtifacts({ stage: 'STAGE_1', status: 'confirmed' }),
+      api.getArtifacts({ stage: 'STAGE_2' }),
+    ]);
+    setStage1Artifacts(stage1);
+    setStage2Artifacts(stage2);
   }
 
   async function startRun() {
@@ -118,12 +129,23 @@ export default function Stage2Tab() {
 
       if (inputMode === 'db') {
         if (!selectedArtifactId) { setPhase('idle'); setStatusMsg('검토 결론을 선택하세요.'); return; }
-        const selected = artifacts.find(a => a.id === selectedArtifactId)!;
+        const selected = stage1Artifacts.find(a => a.id === selectedArtifactId)!;
         params = {
           issueId: selected.issue_id,
           stage: 'STAGE_2',
           inputArtifactId: selectedArtifactId,
           customToc: customToc.trim() || undefined,
+          developmentNote: developmentNote.trim() || undefined,
+        };
+      } else if (inputMode === 'stage2') {
+        if (!selectedStage2ArtifactId) { setPhase('idle'); setStatusMsg('기존 Stage 2 결과물을 선택하세요.'); return; }
+        const selected = stage2Artifacts.find(a => a.id === selectedStage2ArtifactId)!;
+        params = {
+          issueId: selected.issue_id,
+          stage: 'STAGE_2',
+          inputArtifactId: selectedStage2ArtifactId,
+          customToc: customToc.trim() || undefined,
+          developmentNote: developmentNote.trim() || undefined,
         };
       } else {
         if (!manualInput.trim()) { setPhase('idle'); setStatusMsg('검토 결론을 입력하세요.'); return; }
@@ -131,6 +153,7 @@ export default function Stage2Tab() {
           stage: 'STAGE_2',
           manualInput: manualInput.trim(),
           customToc: customToc.trim() || undefined,
+          developmentNote: developmentNote.trim() || undefined,
         };
       }
 
@@ -150,6 +173,7 @@ export default function Stage2Tab() {
     await api.confirmSession(sessionIdRef.current, report.id);
     setPhase('confirmed');
     setStatusMsg(`✅ 보고서 확정 완료 — Artifact ID: ${report.id}`);
+    await refreshArtifacts();
   }
 
   async function handleFeedback() {
@@ -174,7 +198,7 @@ export default function Stage2Tab() {
 
       {/* 입력 방식 선택 */}
       <div style={{ display: 'flex', gap: 12 }}>
-        {(['db', 'manual'] as InputMode[]).map(mode => (
+        {(['db', 'stage2', 'manual'] as Array<InputMode | 'stage2'>).map(mode => (
           <label key={mode} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
             <input
               type="radio"
@@ -184,7 +208,7 @@ export default function Stage2Tab() {
               disabled={isRunning}
             />
             <span style={{ fontSize: 13 }}>
-              {mode === 'db' ? 'Stage 1 확정 결론에서 선택' : '직접 입력'}
+              {mode === 'db' ? 'Stage 1 확정 결론에서 선택' : mode === 'stage2' ? '기존 Stage 2 결과 발전' : '직접 입력'}
             </span>
           </label>
         ))}
@@ -200,14 +224,44 @@ export default function Stage2Tab() {
             disabled={isRunning}
           >
             <option value="">— 선택하세요 —</option>
-            {artifacts.map(a => (
+            {stage1Artifacts.map(a => (
               <option key={a.id} value={a.id}>
                 v{a.version} | {a.created_at.slice(0, 16)} | {a.summary ?? '(요약 없음)'}
               </option>
             ))}
           </select>
           {selectedArtifactId && (() => {
-            const a = artifacts.find(x => x.id === selectedArtifactId);
+            const a = stage1Artifacts.find(x => x.id === selectedArtifactId);
+            return a ? (
+              <pre style={{
+                marginTop: 8, background: '#f8fafc', borderRadius: 4, padding: 10,
+                fontSize: 12, lineHeight: 1.6, maxHeight: 160, overflowY: 'auto',
+                whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#374151',
+              }}>
+                {a.content.slice(0, 600)}{a.content.length > 600 ? '…' : ''}
+              </pre>
+            ) : null;
+          })()}
+        </div>
+      )}
+
+      {inputMode === 'stage2' && (
+        <div>
+          <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>기존 Stage 2 결과물</label>
+          <select
+            value={selectedStage2ArtifactId}
+            onChange={e => setSelectedStage2ArtifactId(e.target.value)}
+            disabled={isRunning}
+          >
+            <option value="">— 선택하세요 —</option>
+            {stage2Artifacts.map(a => (
+              <option key={a.id} value={a.id}>
+                {a.status} | v{a.version} | {a.created_at.slice(0, 16)} | {a.summary ?? '(요약 없음)'}
+              </option>
+            ))}
+          </select>
+          {selectedStage2ArtifactId && (() => {
+            const a = stage2Artifacts.find(x => x.id === selectedStage2ArtifactId);
             return a ? (
               <pre style={{
                 marginTop: 8, background: '#f8fafc', borderRadius: 4, padding: 10,
@@ -230,6 +284,19 @@ export default function Stage2Tab() {
             onChange={e => setManualInput(e.target.value)}
             rows={8}
             placeholder="검토 결론을 직접 입력하세요..."
+            disabled={isRunning}
+          />
+        </div>
+      )}
+
+      {inputMode !== 'manual' && (
+        <div>
+          <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>추가 개발 요청</label>
+          <textarea
+            value={developmentNote}
+            onChange={e => setDevelopmentNote(e.target.value)}
+            rows={3}
+            placeholder="예) 목차 재정리, 임원 보고용 톤으로 수정, 특정 파트 간결화 등"
             disabled={isRunning}
           />
         </div>
@@ -261,10 +328,10 @@ export default function Stage2Tab() {
       <div>
         <button
           onClick={startRun}
-          disabled={isRunning}
+          disabled={isRunning || (inputMode === 'db' ? !selectedArtifactId : inputMode === 'stage2' ? !selectedStage2ArtifactId : !manualInput.trim())}
           style={{ background: '#7c3aed', color: '#fff', padding: '8px 20px' }}
         >
-          {isRunning ? '⏳ 보고서 작성 중...' : '보고서 작성'}
+          {isRunning ? '⏳ 보고서 작성 중...' : inputMode === 'stage2' ? '선택 결과 발전' : '보고서 작성'}
         </button>
       </div>
 

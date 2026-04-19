@@ -147,6 +147,19 @@ export class SessionStore {
     return rows[0] as unknown as Artifact;
   }
 
+  async getArtifactWithContext(id: string): Promise<Artifact> {
+    const [rows] = await this.pool.query<mysql.RowDataPacket[]>(
+      `SELECT a.*, ss.stage AS session_stage, ss.issue_id
+       FROM artifacts a
+       JOIN stage_sessions ss ON a.stage_session_id = ss.id
+       WHERE a.id = ?
+       LIMIT 1`,
+      [id],
+    );
+    if (rows.length === 0) throw new Error(`Artifact not found: ${id}`);
+    return rows[0] as unknown as Artifact;
+  }
+
   async getArtifactsList(params: {
     stage?: string;
     status?: string;

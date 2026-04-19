@@ -49,6 +49,8 @@ export interface Artifact {
   status: ArtifactStatus;
   content: string;
   summary: string | null;
+  session_stage?: Stage;
+  issue_id?: string;
   created_at: Date;
 }
 

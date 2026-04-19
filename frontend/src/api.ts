@@ -27,10 +27,11 @@ export function createIssue(inputText: string) {
 
 export function createSession(params: {
   issueId?: string;
-  stage: 'STAGE_1' | 'STAGE_2';
+  stage: 'STAGE_1' | 'STAGE_2' | 'STAGE_3';
   inputArtifactId?: string;
   manualInput?: string;
   customToc?: string;
+  developmentNote?: string;
 }) {
   return post<{ id: string; issueId: string }>('/sessions', params);
 }
@@ -49,7 +50,7 @@ export function submitFeedback(sessionId: string, text: string, customToc?: stri
   return post<{ ok: boolean }>(`/sessions/${sessionId}/feedback`, { text, customToc });
 }
 
-export function getArtifacts(params: { stage?: string; status?: string } = {}) {
+export function getArtifacts(params: { stage?: string; status?: string; issueId?: string } = {}) {
   const qs = new URLSearchParams(params as Record<string, string>).toString();
   return get<Artifact[]>(`/artifacts${qs ? `?${qs}` : ''}`);
 }

@@ -13,6 +13,7 @@
 
 ## Log
 
+- 2026-04-19 21:28:56 +09:00 | GPT Codex | Stage 재개발 흐름 확장. `Stage 1`은 기존 Stage1 artifact 선택 후 새 Stage1 세션으로 발전 가능, `Stage 2`는 Stage1 확정본 또는 기존 Stage2 artifact를 입력으로 새 Stage2 세션 생성 가능, `Stage 3`는 Stage2/기존 Stage3 artifact 선택 기반 편집 초안 세션과 별도 artifact 저장 지원.
 - 2026-04-19 +09:00 | Claude Code | P3 프론트엔드 구현 완료. React+Vite SPA(frontend/). Stage1 탭(이슈입력→에이전트실행→confirm/feedback), Stage2 탭(DB선택/직접입력/커스텀목차→보고서작성→confirm/feedback), EventLog SSE 실시간 스트리밍. Express REST API(backend/src/server.ts) 추가. npm run server로 기동.
 - 2026-04-19 +09:00 | Claude Code | P4 보고서 에이전트 개선. STAGE2_SYSTEM_PROMPT 구조를 현황/이슈/검토의견/향후계획으로 수정. 개조식 레벨(1/□/○/-/·) 명시. few-shot 예시 삽입. 커스텀 목차 우선 적용 로직 추가.
 - 2026-04-19 +09:00 | Claude Code | AgentEngine에 AgentEvent 이벤트 시스템 추가. onEvent 콜백으로 CLI·HTTP 양쪽 지원. index.ts에 콘솔 어댑터(makeConsoleHandler) 구현. SessionStore에 getArtifactsList 추가.

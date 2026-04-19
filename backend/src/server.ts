@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import { SessionStore } from './store/SessionStore.js';
 import { ToolGateway } from './engine/ToolGateway.js';
-import { AgentEngine, STAGE2_SYSTEM_PROMPT } from './engine/AgentEngine.js';
+import { AgentEngine, STAGE2_SYSTEM_PROMPT, STAGE3_SYSTEM_PROMPT } from './engine/AgentEngine.js';
 import type { AgentEvent } from './engine/AgentEngine.js';
 import { closePool } from './db/connection.js';
 
@@ -42,7 +42,7 @@ function broadcast(sessionId: string, event: AgentEvent): void {
 async function startAgent(
   sessionId: string,
   stage: string,
-  opts: { feedback?: string; inputArtifactId?: string; manualInput?: string; customToc?: string } = {},
+  opts: { feedback?: string; inputArtifactId?: string; manualInput?: string; customToc?: string; developmentNote?: string } = {},
 ): Promise<void> {
   if (runningSession.has(sessionId)) return;
   runningSession.add(sessionId);
@@ -51,21 +51,28 @@ async function startAgent(
     let systemPrompt: string | undefined;
     let useMcpTools: boolean | undefined;
     let initialInputOverride: string | undefined;
+    let sourceArtifact = null;
+
+    if (opts.inputArtifactId) {
+      sourceArtifact = await store.getArtifactWithContext(opts.inputArtifactId);
+    }
 
     if (stage === 'STAGE_2') {
       systemPrompt = opts.customToc
         ? buildCustomTocPrompt(opts.customToc)
         : STAGE2_SYSTEM_PROMPT;
       useMcpTools = false;
+    } else if (stage === 'STAGE_3') {
+      systemPrompt = STAGE3_SYSTEM_PROMPT;
+      useMcpTools = false;
+    }
 
-      if (!opts.feedback) {
-        if (opts.inputArtifactId) {
-          const artifact = await store.getArtifact(opts.inputArtifactId);
-          initialInputOverride = `[검토 결론]\n${artifact.content}`;
-        } else if (opts.manualInput) {
-          initialInputOverride = `[검토 결론]\n${opts.manualInput}`;
-        }
-      }
+    if (!opts.feedback) {
+      initialInputOverride = buildInitialInput(stage, {
+        sourceArtifact,
+        manualInput: opts.manualInput,
+        developmentNote: opts.developmentNote,
+      });
     }
 
     await engine.runSession(sessionId, opts.feedback, {
@@ -84,6 +91,54 @@ function buildCustomTocPrompt(customToc: string): string {
     '사용자가 별도 목차를 제시한 경우, 아래 기본 구조 대신 제시된 목차를 우선 적용합니다.',
     '사용자가 다음 목차를 제시하였으므로, 기본 구조 대신 이 목차를 적용합니다:\n\n' + customToc,
   );
+}
+
+function buildInitialInput(
+  stage: string,
+  opts: {
+    sourceArtifact: Awaited<ReturnType<SessionStore['getArtifactWithContext']>> | null;
+    manualInput?: string;
+    developmentNote?: string;
+  },
+): string | undefined {
+  const noteSection = opts.developmentNote?.trim()
+    ? `\n\n[추가 요청]\n${opts.developmentNote.trim()}`
+    : '';
+
+  if (stage === 'STAGE_1') {
+    if (!opts.sourceArtifact) return undefined;
+    return (
+      `[기존 검토 결론]\n${opts.sourceArtifact.content}` +
+      `${noteSection}\n\n위 기존 결론을 바탕으로 요청사항을 반영한 새로운 검토 결론 초안을 작성해주세요.`
+    );
+  }
+
+  if (stage === 'STAGE_2') {
+    if (opts.sourceArtifact) {
+      const label = opts.sourceArtifact.session_stage === 'STAGE_2' ? '기존 보고서 초안' : '검토 결론';
+      const action = opts.sourceArtifact.session_stage === 'STAGE_2'
+        ? '위 기존 보고서를 바탕으로 요청사항을 반영한 새로운 보고서 초안을 작성해주세요.'
+        : '위 검토 결론을 바탕으로 새로운 보고서 초안을 작성해주세요.';
+      return `[${label}]\n${opts.sourceArtifact.content}${noteSection}\n\n${action}`;
+    }
+
+    if (opts.manualInput?.trim()) {
+      return `[검토 결론]\n${opts.manualInput.trim()}${noteSection}\n\n위 내용을 바탕으로 새로운 보고서 초안을 작성해주세요.`;
+    }
+
+    return undefined;
+  }
+
+  if (stage === 'STAGE_3') {
+    if (!opts.sourceArtifact) return undefined;
+    const label = opts.sourceArtifact.session_stage === 'STAGE_3' ? '기존 편집본' : '보고서 초안';
+    return (
+      `[${label}]\n${opts.sourceArtifact.content}` +
+      `${noteSection}\n\n위 문서를 바탕으로 내용의 결론은 유지한 채 편집용 새 초안을 작성해주세요.`
+    );
+  }
+
+  return undefined;
 }
 
 // ── Express 앱 ────────────────────────────────────────────────
@@ -119,19 +174,26 @@ app.post('/api/sessions', async (req, res) => {
       inputArtifactId,
       manualInput,
       customToc,
+      developmentNote,
     } = req.body as {
       issueId?: string;
-      stage: 'STAGE_1' | 'STAGE_2';
+      stage: 'STAGE_1' | 'STAGE_2' | 'STAGE_3';
       inputArtifactId?: string;
       manualInput?: string;
       customToc?: string;
+      developmentNote?: string;
     };
 
     if (!stage) { res.status(400).json({ error: 'stage required' }); return; }
 
     let actualIssueId = issueId;
 
-    // Stage 2 직접 입력: 임시 이슈 생성
+    if (!actualIssueId && inputArtifactId) {
+      const sourceArtifact = await store.getArtifactWithContext(inputArtifactId);
+      actualIssueId = sourceArtifact.issue_id;
+    }
+
+    // 직접 입력: 임시 이슈 생성
     if (!actualIssueId && manualInput) {
       const issue = await store.createIssue(manualInput.trim());
       actualIssueId = issue.id;
@@ -143,7 +205,7 @@ app.post('/api/sessions', async (req, res) => {
     res.json({ id: session.id, issueId: actualIssueId });
 
     // 에이전트 비동기 실행
-    startAgent(session.id, stage, { inputArtifactId, manualInput, customToc }).catch(console.error);
+    startAgent(session.id, stage, { inputArtifactId, manualInput, customToc, developmentNote }).catch(console.error);
   } catch (e) { res.status(500).json({ error: (e as Error).message }); }
 });
 

@@ -1,12 +1,17 @@
-import { useState, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as api from '../api';
 import type { AgentEvent, Artifact, LogEntry } from '../types';
 import EventLog from './EventLog';
 
+type InputMode = 'new' | 'artifact';
 type Phase = 'idle' | 'running' | 'waiting' | 'confirmed';
 
 export default function Stage1Tab() {
+  const [inputMode, setInputMode] = useState<InputMode>('new');
   const [issueText, setIssueText]   = useState('');
+  const [artifacts, setArtifacts]   = useState<Artifact[]>([]);
+  const [selectedArtifactId, setSelectedArtifactId] = useState('');
+  const [developmentNote, setDevelopmentNote] = useState('');
   const [phase, setPhase]           = useState<Phase>('idle');
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [streamText, setStreamText] = useState('');
@@ -18,6 +23,10 @@ export default function Stage1Tab() {
   const sessionIdRef  = useRef<string | null>(null);
   const esRef         = useRef<EventSource | null>(null);
   const logIdRef      = useRef(0);
+
+  useEffect(() => {
+    refreshArtifacts().catch(console.error);
+  }, []);
 
   function addLog(text: string, kind: LogEntry['kind']) {
     setLogEntries(prev => [...prev, { id: logIdRef.current++, text, kind }]);
@@ -96,10 +105,15 @@ export default function Stage1Tab() {
     const { artifact: a } = await api.getSession(sessionIdRef.current);
     setArtifact(a);
     setPhase('waiting');
+    await refreshArtifacts();
+  }
+
+  async function refreshArtifacts() {
+    const list = await api.getArtifacts({ stage: 'STAGE_1' });
+    setArtifacts(list);
   }
 
   async function startRun() {
-    if (!issueText.trim()) return;
     setPhase('running');
     setLogEntries([]);
     setStreamText('');
@@ -108,8 +122,38 @@ export default function Stage1Tab() {
     setShowFeedback(false);
 
     try {
-      const { id: issueId } = await api.createIssue(issueText);
-      const { id: sessionId } = await api.createSession({ issueId, stage: 'STAGE_1' });
+      let sessionId: string;
+
+      if (inputMode === 'new') {
+        if (!issueText.trim()) {
+          setPhase('idle');
+          setStatusMsg('이슈 내용을 입력하세요.');
+          return;
+        }
+        const { id: issueId } = await api.createIssue(issueText);
+        ({ id: sessionId } = await api.createSession({ issueId, stage: 'STAGE_1' }));
+      } else {
+        if (!selectedArtifactId) {
+          setPhase('idle');
+          setStatusMsg('기존 Stage 1 결과물을 선택하세요.');
+          return;
+        }
+        const selected = artifacts.find(a => a.id === selectedArtifactId);
+        if (!selected?.issue_id) {
+          setPhase('idle');
+          setStatusMsg('선택한 결과물의 이슈 정보를 찾지 못했습니다.');
+          return;
+        }
+        ({
+          id: sessionId,
+        } = await api.createSession({
+          issueId: selected.issue_id,
+          stage: 'STAGE_1',
+          inputArtifactId: selectedArtifactId,
+          developmentNote: developmentNote.trim() || undefined,
+        }));
+      }
+
       sessionIdRef.current = sessionId;
 
       esRef.current?.close();
@@ -125,6 +169,7 @@ export default function Stage1Tab() {
     await api.confirmSession(sessionIdRef.current, artifact.id);
     setPhase('confirmed');
     setStatusMsg(`✅ 확정 완료 — Artifact ID: ${artifact.id}`);
+    await refreshArtifacts();
   }
 
   async function handleFeedback() {
@@ -145,25 +190,85 @@ export default function Stage1Tab() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <h2 style={{ fontSize: 16, fontWeight: 700, color: '#1e3a5f' }}>Stage 1 — 검토 결론</h2>
 
-      {/* 이슈 입력 */}
-      <div>
-        <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>이슈 내용</label>
-        <textarea
-          value={issueText}
-          onChange={e => setIssueText(e.target.value)}
-          rows={6}
-          placeholder="검토가 필요한 이슈를 입력하세요..."
-          disabled={phase === 'running' || phase === 'confirmed'}
-        />
+      <div style={{ display: 'flex', gap: 12 }}>
+        {(['new', 'artifact'] as InputMode[]).map(mode => (
+          <label key={mode} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+            <input
+              type="radio"
+              checked={inputMode === mode}
+              onChange={() => setInputMode(mode)}
+              disabled={phase === 'running'}
+            />
+            <span style={{ fontSize: 13 }}>
+              {mode === 'new' ? '새 이슈로 시작' : '기존 Stage 1 결과 발전'}
+            </span>
+          </label>
+        ))}
       </div>
+
+      {inputMode === 'new' ? (
+        <div>
+          <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>이슈 내용</label>
+          <textarea
+            value={issueText}
+            onChange={e => setIssueText(e.target.value)}
+            rows={6}
+            placeholder="검토가 필요한 이슈를 입력하세요..."
+            disabled={phase === 'running'}
+          />
+        </div>
+      ) : (
+        <>
+          <div>
+            <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>기존 Stage 1 결과물</label>
+            <select
+              value={selectedArtifactId}
+              onChange={e => setSelectedArtifactId(e.target.value)}
+              disabled={phase === 'running'}
+            >
+              <option value="">— 선택하세요 —</option>
+              {artifacts.map(a => (
+                <option key={a.id} value={a.id}>
+                  {a.status} | v{a.version} | {a.created_at.slice(0, 16)} | {a.summary ?? '(요약 없음)'}
+                </option>
+              ))}
+            </select>
+            {selectedArtifactId && (() => {
+              const selected = artifacts.find(a => a.id === selectedArtifactId);
+              return selected ? (
+                <pre style={{
+                  marginTop: 8, background: '#f8fafc', borderRadius: 4, padding: 10,
+                  fontSize: 12, lineHeight: 1.6, maxHeight: 160, overflowY: 'auto',
+                  whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#374151',
+                }}>
+                  {selected.content.slice(0, 700)}{selected.content.length > 700 ? '…' : ''}
+                </pre>
+              ) : null;
+            })()}
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>
+              추가 개발 요청
+            </label>
+            <textarea
+              value={developmentNote}
+              onChange={e => setDevelopmentNote(e.target.value)}
+              rows={4}
+              placeholder="예) 최근 논점 추가 반영, 표현 보수화, 특정 근거 보강 등"
+              disabled={phase === 'running'}
+            />
+          </div>
+        </>
+      )}
 
       <div>
         <button
           onClick={startRun}
-          disabled={phase === 'running' || !issueText.trim()}
+          disabled={phase === 'running' || (inputMode === 'new' ? !issueText.trim() : !selectedArtifactId)}
           style={{ background: '#2563eb', color: '#fff', padding: '8px 20px' }}
         >
-          {phase === 'running' ? '⏳ 실행 중...' : '검토 시작'}
+          {phase === 'running' ? '⏳ 실행 중...' : inputMode === 'new' ? '검토 시작' : '선택 결과 발전'}
         </button>
       </div>
 

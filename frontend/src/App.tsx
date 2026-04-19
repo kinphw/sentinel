@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Stage1Tab from './components/Stage1Tab';
 import Stage2Tab from './components/Stage2Tab';
+import Stage3Tab from './components/Stage3Tab';
 
 type Tab = 'stage1' | 'stage2' | 'stage3';
 
@@ -46,8 +47,8 @@ export default function App() {
         <button style={tab === 'stage2' ? ACTIVE_TAB_STYLE : TAB_STYLE} onClick={() => setTab('stage2')}>
           Stage 2 — 보고서 초안
         </button>
-        <button style={DISABLED_TAB_STYLE} disabled title="준비 중">
-          Stage 3 — HWP 편집 (준비 중)
+        <button style={tab === 'stage3' ? ACTIVE_TAB_STYLE : TAB_STYLE} onClick={() => setTab('stage3')}>
+          Stage 3 — HWP 편집 준비
         </button>
       </div>
 
@@ -55,6 +56,7 @@ export default function App() {
       <main style={{ flex: 1, padding: '20px 24px', maxWidth: 1100, width: '100%', margin: '0 auto' }}>
         {tab === 'stage1' && <Stage1Tab />}
         {tab === 'stage2' && <Stage2Tab />}
+        {tab === 'stage3' && <Stage3Tab />}
       </main>
     </div>
   );
