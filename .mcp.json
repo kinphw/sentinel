@@ -6,6 +6,18 @@
       "env": {
         "LAW_OC": "phw1985"
       }
+    },
+    "interpretation": {
+      "command": "node",
+      "args": ["C:/projects/sentinel/mcp/interpretation-mcp/dist/index.js"],
+      "env": {
+        "MYSQL_HOST": "localhost",
+        "MYSQL_PORT": "3306",
+        "MYSQL_USER": "ldbuser",
+        "MYSQL_PASSWORD": "1226",
+        "DB_NAME": "ldb_i",
+        "TABLE_NAME": "db_i"
+      }
     }
   }
 }
