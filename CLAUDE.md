@@ -238,15 +238,67 @@ P1 도구를 손에 쥔 에이전트가 실제로 루프를 돌며 검증 가능
 
 ---
 
-## 8. 문서 인덱스
+## 8. 진행상황 체크
+
+> Claude Code와 GPT Codex가 번갈아 작업하더라도, 이 표를 먼저 갱신하고 다음 작업을 이어받을 것.
+> 상태가 바뀌면 관련 문서와 함께 이 섹션도 업데이트한다.
+
+### 현재 상태 요약
+
+- 현재 완료 단계: **P2 — 에이전트 엔진 (Agent Core)**
+- 현재 작업 기준선: `backend/` 골조 구현 완료. sentinel_db 초기화 완료. `.env`에 `ANTHROPIC_API_KEY` 입력 후 즉시 실행 가능
+- 현재 진행 단계: **P3/P4 준비 중**
+- 다음 우선순위: `npm run dev` 실행 테스트 → STAGE 1 도메인 프롬프트 설계 (P4)
+- 최신 갱신일: **2026-04-19**
+
+### Phase 상태판
+
+| Phase | 상태 | 비고 |
+|------|------|------|
+| **P1** MCP 도구 레이어 | **완료** | lawquery MCP, 법령정보 MCP 연결 및 기본 조회 검증 완료 |
+| **P2** 에이전트 엔진 | **완료** | `backend/` 골조 구현. SessionStore, ToolGateway, AgentEngine, CLI 완성. MariaDB 스키마 적용 완료 |
+| **P3** 피드백 재진입 | 대기 | P2 이후 구현 |
+| **P4** STAGE 1 검토 결론 에이전트 | 대기 | P2, P3 기반 위에 구축 |
+| **P5** STAGE 2 보고서 초안 에이전트 | 대기 | STAGE 1 확정 산출물 전제 |
+| **P6** STAGE 3 HWP 편집 모듈 | 대기 | Windows COM 자동화 단계 |
+
+### 최근 완료 항목
+
+- `P1` 완료 — lawquery MCP, 법령정보 MCP 동작 확인
+- `P2` 완료 — `backend/` 전체 골조 구현
+  - 백엔드 언어: **Node.js / TypeScript** 확정
+  - 저장소: **MariaDB (sentinel_db)** 확정, 6개 테이블 생성 완료
+  - 워커 방식: 단일 프로세스 async loop 확정
+  - `SessionStore` / `ToolGateway` / `AgentEngine` / CLI(`src/index.ts`) 구현
+  - HWP COM 모듈은 향후 Python subprocess로 분리 예정
+
+### 다음 작업 체크리스트
+
+- `.env`에 `ANTHROPIC_API_KEY` 값 입력
+- `npm run dev` (backend/)로 실행 테스트
+- P4: STAGE 1 법령 검토 도메인 프롬프트 설계 및 few-shot 사례 추가
+- P3: 피드백 재진입 로직은 AgentEngine에 이미 내장됨 — 실제 테스트로 검증
+
+### 작업 인계 규칙
+
+1. 새 작업을 시작하기 전에 이 섹션의 `현재 상태 요약`과 `다음 작업 체크리스트`를 먼저 확인한다.
+2. 의미 있는 변경을 마치면 `Phase 상태판`과 `최근 완료 항목`을 함께 갱신한다.
+3. 의미 있는 변경을 마치면 `TASK_LOG.md`에 시간, 작업주체, 작업내용을 append한다.
+4. 새 문서를 만들면 아래 `문서 인덱스`에도 즉시 반영한다.
+5. Claude/Codex 중 어떤 도구로 작업했는지는 필수 기록 대상은 아니며, **프로젝트 상태 변화**만 남긴다.
+
+---
+
+## 9. 문서 인덱스
 
 > AI가 작업 시작 전 이 표를 확인하여 필요한 문서를 먼저 읽을 것.
 > CLAUDE.md는 지도다. 상세 내용은 아래 문서에 있다.
 
 | 파일 | 상태 | 내용 |
 |------|------|------|
+| [TASK_LOG.md](TASK_LOG.md) | **작성완료** | 전역 작업 이력 로그. 시간/작업주체/작업내용 append 전용 |
 | [docs/p1-mcp.md](docs/p1-mcp.md) | **작성완료** | P1 - lawquery MCP 서버 및 법령정보 API 구현 상세 |
-| [docs/p2-agent.md](docs/p2-agent.md) | 미작성 | P2 - 에이전트 루프 설계, STAGE 상태 관리 |
+| [docs/p2-agent.md](docs/p2-agent.md) | **작성완료** | P2 - 에이전트 엔진 범위, 상태 모델, 실행 흐름, 완료 기준 |
 | [docs/p3-feedback.md](docs/p3-feedback.md) | 미작성 | P3 - 피드백 재진입 로직 설계 |
 | [docs/editing-rules.md](docs/editing-rules.md) | 미작성 | HWP 편집 규칙 상세 (글자크기·행간·들여쓰기 등) |
 | [docs/report-samples/](docs/report-samples/) | 미작성 | 금감원 보고서 사례 (few-shot 학습용) |
@@ -254,7 +306,7 @@ P1 도구를 손에 쥔 에이전트가 실제로 루프를 돌며 검증 가능
 
 ---
 
-## 9. Git 커밋 컨벤션
+## 10. Git 커밋 컨벤션
 
 ```
 <type>(<scope>): <subject>
@@ -281,7 +333,7 @@ chore: add .gitignore and initialize git repository
 
 ---
 
-## 10. AI 협업 지침
+## 11. AI 협업 지침
 
 이 문서를 읽는 AI(Claude, GPT 등)는 다음을 준수하십시오.
 
@@ -291,6 +343,7 @@ chore: add .gitignore and initialize git repository
 4. **보안.** lawquery DB 및 내부 보고서 데이터는 외부 노출 금지.
 5. **HWP 모듈은 Windows 전용.** COM API 의존성을 명확히 격리하십시오.
 6. **결정되지 않은 사항** (백엔드 언어, 판례 도입 범위 등)은 임의로 결정하지 말고 사용자에게 확인하십시오.
+7. **작업 이력 기록.** 의미 있는 변경을 완료하면 `TASK_LOG.md`에 append하여 다음 작업자가 문맥을 이어받을 수 있게 하십시오.
 
 ---
 
