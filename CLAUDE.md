@@ -183,57 +183,42 @@ sentinel/
 
 > **도구가 먼저, 엔진이 다음이다.** 에이전트 루프는 호출할 도구 없이는 검증도 개발도 불가능하다. MCP 도구를 먼저 만들고, 그 위에 에이전트를 올린다.
 
-### P1 — MCP 도구 레이어 (법령 조회) ★ 시작점
+### P1 — MCP 도구 레이어 (법령 조회) ★ 완료
 
 에이전트가 없어도 이것만으로 독립 동작·검증 가능. 전체 프로젝트의 실질적 출발점.
 
 | 작업 | 설명 |
 |------|------|
 | lawquery MCP 서버 | `c:\projects\lawquery` DB를 MCP 프로토콜로 노출 (법령해석 약 4만 건) |
-| 법령정보 API 래퍼 | 국가법령정보 API를 MCP 도구로 래핑 |
+| 법령정보 API 래퍼 | 국가법령정보 API를 MCP 도구로 래핑 (법령 검색·전문·목차·개별조문·체계도·행정규칙) |
 | 판례 연동 (선택) | 대법원 API — 방대한 규모로 도입 범위 별도 결정 |
 
-### P2 — 에이전트 엔진 (Agent Core) ★ 골조
+### P2 — 검토 에이전트 엔진 ★ 완료
 
-P1 도구를 손에 쥔 에이전트가 실제로 루프를 돌며 검증 가능해지는 시점. 프로토타입 완성.
-
-| 작업 | 설명 |
-|------|------|
-| 에이전트 루프 | Claude API를 다회전(multi-turn)으로 반복 호출. 자기 평가 후 재시도, 만족 시 사람에게 확인 요청 |
-| STAGE 상태 관리 | 현재 어느 STAGE인지, 각 STAGE의 산출물(초안/확정)을 영속 저장 |
-| 도구 호출 프레임워크 | 에이전트가 MCP 도구를 자율적으로 선택·호출할 수 있는 tool-use 구조 |
-| Human-in-the-loop | STAGE 경계에서 에이전트가 멈추고 사람의 confirm/feedback을 기다리는 인터페이스 |
-
-### P3 — 단계 내 피드백 재진입 (Feedback Re-entry) ★ 골조
-
-에이전트가 단순 일회성이 아닌 **대화형 협업 도구**가 되는 핵심 로직.
+P1 도구를 손에 쥔 에이전트가 법령을 검토하고 결론을 산출하는 전체 백엔드 엔진.
 
 | 작업 | 설명 |
 |------|------|
-| 피드백 수신 | 사람의 피드백을 STAGE별 컨텍스트에 주입 |
-| 재진입 로직 | 피드백을 받은 STAGE 에이전트를 재실행 (다른 STAGE 불변) |
-| 대화 이력 유지 | STAGE별 피드백 반복 횟수·이력을 기록하여 에이전트가 참고 |
+| 에이전트 루프 | Claude API 다회전 반복 호출. 자기 평가 후 재시도, 만족 시 사람에게 확인 요청 |
+| STAGE 상태 관리 | SessionStore — 이슈·세션·산출물·피드백을 MariaDB에 영속 저장 |
+| 도구 호출 프레임워크 | ToolGateway — MCP 도구를 에이전트가 자율 선택·호출하는 tool-use 구조 |
+| Human-in-the-loop | STAGE 경계에서 에이전트가 멈추고 사람의 confirm/feedback을 기다리는 CLI |
+| 피드백 재진입 | 피드백을 받은 STAGE 에이전트를 재실행 (다른 STAGE 불변). 대화 이력 유지 |
+| STAGE 1 검토 결론 에이전트 | 쟁점 파악 → 법령 3단계 조회(체계도→목차→개별조문) → 판단 → 자기 검토 흐름 |
 
-### P4 — STAGE 1: 검토 결론 에이전트
+### P3 — 프론트엔드 (오케스트레이터) ★ 요건 작성 중
 
-| 작업 | 설명 |
-|------|------|
-| 법령 검토 프롬프트 | 쟁점 파악 → 법령 조회 → 판단 → 자기 검토의 추론 흐름 설계 |
-| 결론 품질 평가 | 에이전트가 스스로 결론의 완결성을 평가하여 추가 조회 여부 결정 |
-| 사례 보정 | 기존 금감원 검토 사례를 few-shot으로 제공 |
+CLI를 웹 UI로 전환. 사용자가 이슈를 입력하고, 에이전트 진행 상황을 실시간 확인하며, confirm/feedback을 주는 인터페이스. 상세 요건은 [docs/p3-frontend.md](docs/p3-frontend.md) 참조.
 
-### P5 — STAGE 2: 보고서 초안 에이전트
+### P4 — 보고서 에이전트 ★ 기본 구현 완료 / 요건 보강 예정
 
-| 작업 | 설명 |
-|------|------|
-| 보고서 구조화 프롬프트 | 확정 결론 → 배경/이슈/검토/계획 구조로 재구성 |
-| 금감원 문체 적용 | 개조식, 분량 제한(2장), 각주 규칙 등 사례 기반 학습 |
+확정된 검토 결론을 입력으로 금감원 보고서 형식(배경/이슈/검토/계획, 개조식)으로 재구성하는 에이전트. STAGE2_SYSTEM_PROMPT 및 CLI 흐름은 구현 완료. 상세 요건은 [docs/p4-report-agent.md](docs/p4-report-agent.md) 참조.
 
-### P6 — STAGE 3: HWP 편집 모듈
+### P5 — 보고서 편집 모듈 (HWP) ★ 대기
 
 | 작업 | 설명 |
 |------|------|
-| HWP COM API 모듈 | 확정 초안을 HWP 파일로 변환, 편집 규칙 자동 적용 |
+| HWP COM API 모듈 | 확정 초안을 HWP 파일로 변환, 편집 규칙 자동 적용 (Python subprocess 방식) |
 | OCR 검증 (선택) | 출력 이미지 분석으로 서식 이상 탐지 (후순위) |
 
 ---
@@ -245,10 +230,10 @@ P1 도구를 손에 쥔 에이전트가 실제로 루프를 돌며 검증 가능
 
 ### 현재 상태 요약
 
-- 현재 완료 단계: **P5 — STAGE 2 보고서 초안 에이전트**
-- 현재 작업 기준선: P1~P5 모두 구현 완료. CLI로 STAGE 1→STAGE 2 전체 흐름 실행 가능. MariaDB 적재 및 피드백 재진입 정상 동작
-- 현재 진행 단계: **P6 대기 (HWP 편집 모듈)**
-- 다음 우선순위: few-shot 사례 보완 (보고서 품질 개선) → P6 STAGE 3 HWP 편집 모듈 설계
+- 현재 완료 단계: **P2 — 검토 에이전트 엔진**
+- 현재 작업 기준선: P1~P2 구현 완료. CLI로 STAGE 1(검토 결론)→STAGE 2(보고서 초안) 전체 흐름 실행 가능. MariaDB 적재 및 피드백 재진입 정상 동작
+- 현재 진행 단계: **P3 요건 작성 중 (프론트엔드) / P4 기본구현 완료 (보고서 에이전트)**
+- 다음 우선순위: P3 요건 확정 후 프론트엔드 구현 → P4 보고서 에이전트 요건 보강
 - 최신 갱신일: **2026-04-19**
 
 ### Phase 상태판
@@ -256,40 +241,32 @@ P1 도구를 손에 쥔 에이전트가 실제로 루프를 돌며 검증 가능
 | Phase | 상태 | 비고 |
 |------|------|------|
 | **P1** MCP 도구 레이어 | **완료** | lawquery MCP, 법령정보 MCP 연결 및 기본 조회 검증 완료 |
-| **P2** 에이전트 엔진 | **완료** | `backend/` 골조 구현. SessionStore, ToolGateway, AgentEngine, CLI 완성. MariaDB 스키마 적용 완료 |
-| **P3** 피드백 재진입 | **완료** | AgentEngine 내 구현. 연속 user 메시지 버그(messages.seq) 수정 완료. 재진입 정상 동작 확인 |
-| **P4** STAGE 1 검토 결론 에이전트 | **완료** | 시스템 프롬프트, 3단계 조회 흐름(체계도→목차→개별조문), submit_for_review 도구, 연속 오류 강제중단 구현 |
-| **P5** STAGE 2 보고서 초안 에이전트 | **완료** | STAGE2_SYSTEM_PROMPT, RunConfig, index.ts Stage 2 흐름 구현. MCP 도구 비활성화, 확정 결론 고정 입력 |
-| **P6** STAGE 3 HWP 편집 모듈 | 대기 | Windows COM 자동화 단계 |
+| **P2** 검토 에이전트 엔진 | **완료** | SessionStore, ToolGateway, AgentEngine, 피드백 재진입, STAGE 1 검토 결론 에이전트 포함 |
+| **P3** 프론트엔드 (오케스트레이터) | 요건 작성중 | `docs/p3-frontend.md`에 사용자가 요건 기재 예정 |
+| **P4** 보고서 에이전트 | 기본구현 완료 | STAGE2_SYSTEM_PROMPT 및 CLI 흐름 구현. `docs/p4-report-agent.md`에 요건 보강 예정 |
+| **P5** 보고서 편집 모듈 (HWP) | 대기 | Windows COM 자동화 단계 |
 
 ### 최근 완료 항목
 
 - `P1` 완료 — lawquery MCP, 법령정보 MCP 동작 확인
-- `P2` 완료 — `backend/` 전체 골조 구현
+- `P2` 완료 — 검토 에이전트 엔진 전체 구현
   - 백엔드 언어: **Node.js / TypeScript** 확정
   - 저장소: **MariaDB (sentinel_db)** 확정, 6개 테이블 생성 완료
   - 워커 방식: 단일 프로세스 async loop 확정
   - `SessionStore` / `ToolGateway` / `AgentEngine` / CLI(`src/index.ts`) 구현
-  - HWP COM 모듈은 향후 Python subprocess로 분리 예정
-- `P3` 완료 — 피드백 재진입 구현 및 버그 수정
-  - `messages` 테이블 `seq BIGINT AUTO_INCREMENT` PK 추가 → 정렬 일관성 확보
-  - MAX_TOOL_CALLS 도달 후 피드백 재진입 시 연속 user 메시지 방지 (GPT Codex 수정)
-  - `ToolGateway` 도구 정의/결과 캐시 추가 (API 비용 최적화)
-- `P4` 완료 — STAGE 1 검토 결론 에이전트
-  - law-mcp에 `get_law_toc`, `get_admin_rule_toc`, `get_admin_rule_article` 도구 추가
+  - 피드백 재진입, `messages.seq` 정렬 버그 수정, `ToolGateway` 캐시 추가
+  - law-mcp `get_law_toc`, `get_admin_rule_toc`, `get_admin_rule_article` 도구 추가
   - interpretation-mcp 키워드 AND 검색 수정, 기본 limit 20으로 상향
-  - ECONNRESET 재시도 로직 (`axiosGetWithRetry`), 연속 도구 오류 강제중단 (`consecutiveErrors`) 구현
+  - ECONNRESET 재시도 로직, 연속 도구 오류 강제중단 구현
   - `issues.title` 컬럼 제거, `input_text` 단일 필드로 통합
-- `P5` 완료 — STAGE 2 보고서 초안 에이전트
-  - `STAGE2_SYSTEM_PROMPT` (배경/이슈/검토/계획, 개조식, 금감원 문체)
-  - `RunConfig` 패턴으로 Stage별 시스템 프롬프트·도구 목록 분리
-  - CLI에서 Stage 1 확정 후 Stage 2 자동/직접입력/건너뜀 선택 흐름 구현
+  - `STAGE2_SYSTEM_PROMPT` / `RunConfig` 패턴으로 보고서 초안 에이전트 기본 구현
 
 ### 다음 작업 체크리스트
 
-- P6: STAGE 3 HWP 편집 모듈 설계 (Python COM subprocess 방식)
+- P3: `docs/p3-frontend.md` 요건 확정 후 프론트엔드 구현 착수
+- P4: `docs/p4-report-agent.md` 요건 보강 후 보고서 에이전트 개선
+- P5: HWP 편집 모듈 설계 (Python COM subprocess 방식)
 - 보고서 품질 개선: few-shot 사례 파일 (`docs/report-samples/`) 작성 및 프롬프트에 반영
-- `docs/editing-rules.md` 작성: HWP 편집 규칙 상세 (글자크기·행간·들여쓰기 등)
 
 ### 작업 인계 규칙
 
@@ -311,8 +288,9 @@ P1 도구를 손에 쥔 에이전트가 실제로 루프를 돌며 검증 가능
 | [TASK_LOG.md](TASK_LOG.md) | **작성완료** | 전역 작업 이력 로그. 시간/작업주체/작업내용 append 전용 |
 | [docs/p1-mcp.md](docs/p1-mcp.md) | **작성완료** | P1 - lawquery MCP 서버 및 법령정보 API 구현 상세 |
 | [docs/p2-agent.md](docs/p2-agent.md) | **작성완료** | P2 - 에이전트 엔진 범위, 상태 모델, 실행 흐름, 완료 기준 |
-| [docs/p3-feedback.md](docs/p3-feedback.md) | 미작성 | P3 - 피드백 재진입 로직 설계 |
-| [docs/editing-rules.md](docs/editing-rules.md) | 미작성 | HWP 편집 규칙 상세 (글자크기·행간·들여쓰기 등) |
+| [docs/p3-frontend.md](docs/p3-frontend.md) | **작성중** | P3 - 프론트엔드(오케스트레이터) 요건. 사용자가 직접 기재 |
+| [docs/p4-report-agent.md](docs/p4-report-agent.md) | **작성중** | P4 - 보고서 에이전트 요건. 사용자가 직접 기재 |
+| [docs/editing-rules.md](docs/editing-rules.md) | 미작성 | P5 - HWP 편집 규칙 상세 (글자크기·행간·들여쓰기 등) |
 | [docs/report-samples/](docs/report-samples/) | 미작성 | 금감원 보고서 사례 (few-shot 학습용) |
 | [docs/references/law-api.md](docs/references/law-api.md) | 미작성 | 국가법령정보 OpenAPI 문서 (법령목록·본문 조회) |
 
