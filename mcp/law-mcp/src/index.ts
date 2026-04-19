@@ -42,7 +42,9 @@ server.tool(
 server.tool(
   'get_law_hierarchy',
   '법령ID로 법령체계도를 조회합니다. ' +
-  '법률·시행령·시행규칙의 법령ID와 각 단계에 연결된 행정규칙(고시·세칙 등) 목록을 반환합니다. ' +
+  '이 도구는 법률·시행령·시행규칙의 법령ID와 각 단계에 연결된 행정규칙(고시·세칙 등) 목록을 반환합니다. ' +
+  '하위규정(시행령·시행규칙·행정규칙) 연결 관계 확인용입니다. ' +
+  '법령 내부 조문 목차 확인은 get_law_toc를 사용하세요. ' +
   '행정규칙 본문은 행정규칙일련번호로 get_admin_rule_text를 호출하세요.',
   { law_id: z.string().describe('법령ID (search_law 결과에서 획득, 예: "010199")') },
   async ({ law_id }) => {
@@ -94,7 +96,54 @@ server.tool(
   },
 );
 
-// --- Tool 4: 법령 전문 조회 ---
+// --- Tool 4: 행정규칙 특정 조문 조회 ---
+server.tool(
+  'get_admin_rule_article',
+  '행정규칙 일련번호와 조번호로 특정 조문만 조회합니다. ' +
+  '전문(get_admin_rule_text) 대신 이 도구를 우선 사용하세요. ' +
+  '"6조의2"는 article_number=6, sub_number=2로 입력합니다. ' +
+  '일련번호는 get_law_hierarchy 결과에서 획득하세요.',
+  {
+    rule_serial_no: z.string().describe('행정규칙 일련번호 (예: "2100000274812")'),
+    article_number: z.number().int().positive().describe('조번호 (예: 25)'),
+    sub_number: z.number().int().min(0).default(0).describe('가지번호 (예: 6조의2이면 2, 기본값 0)'),
+  },
+  async ({ rule_serial_no, article_number, sub_number }) => {
+    try {
+      const res = await (await import('axios')).default.get('http://www.law.go.kr/DRF/lawService.do', {
+        params: { OC: process.env.LAW_OC, target: 'admrul', ID: rule_serial_no, type: 'JSON' },
+      });
+      const svc = res.data?.AdmRulService;
+      if (!svc) throw new Error(`행정규칙 일련번호 ${rule_serial_no}를 찾을 수 없습니다.`);
+
+      const lines: string[] = Array.isArray(svc.조문내용) ? svc.조문내용: [svc.조문내용];
+      const articlePattern = sub_number > 0
+        ? new RegExp(`^제${article_number}조의${sub_number}(?:\\(|\\s|$)`)
+        : new RegExp(`^제${article_number}조(?!의)(?:\\(|\\s|$)`);
+      const nextArticlePattern = /^제\d+조/;
+
+      const startIdx = lines.findIndex(line => articlePattern.test(String(line)));
+      if (startIdx === -1) {
+        const label = sub_number > 0 ? `제${article_number}조의${sub_number}` : `제${article_number}조`;
+        return { content: [{ type: 'text', text: `${label}를 찾을 수 없습니다.` }] };
+      }
+
+      const articleLines: string[] = [];
+      for (let i = startIdx; i < lines.length; i++) {
+        if (i > startIdx && nextArticlePattern.test(String(lines[i]))) break;
+        articleLines.push(String(lines[i]));
+      }
+
+      const info = svc.행정규칙기본정보 ?? {};
+      const header = `[${info.행정규칙명 ?? ''} | 일련번호: ${rule_serial_no}]\n\n`;
+      return { content: [{ type: 'text', text: header + articleLines.join('\n') }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `오류: ${(e as Error).message}` }], isError: true };
+    }
+  },
+);
+
+// --- Tool 5: 법령 전문 조회 ---
 server.tool(
   'get_law_text',
   '법령ID로 현행 법령의 전체 조문을 조회합니다. ' +
@@ -136,6 +185,72 @@ server.tool(
         return { content: [{ type: 'text', text: `${label}를 찾을 수 없습니다.` }] };
       }
       return { content: [{ type: 'text', text: formatArticle(result) }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `오류: ${(e as Error).message}` }], isError: true };
+    }
+  },
+);
+
+// --- Tool 6: 행정규칙 조문 목차 조회 ---
+server.tool(
+  'get_admin_rule_toc',
+  '행정규칙 일련번호로 행정규칙의 조문 번호·제목 목차만 조회합니다. ' +
+  '조문 내용은 포함하지 않아 가볍습니다. ' +
+  '목차를 보고 필요한 내용을 파악한 뒤 get_admin_rule_text로 전문을 조회하세요. ' +
+  '일련번호는 get_law_hierarchy 결과에서 획득하세요.',
+  { rule_serial_no: z.string().describe('행정규칙 일련번호 (예: "2100000274812")') },
+  async ({ rule_serial_no }) => {
+    try {
+      const res = await (await import('axios')).default.get('http://www.law.go.kr/DRF/lawService.do', {
+        params: { OC: process.env.LAW_OC, target: 'admrul', ID: rule_serial_no, type: 'JSON' },
+      });
+      const svc = res.data?.AdmRulService;
+      if (!svc) throw new Error(`행정규칙 일련번호 ${rule_serial_no}를 찾을 수 없습니다.`);
+
+      const info = svc.행정규칙기본정보 ?? {};
+      const lines: string[] = (Array.isArray(svc.조문내용) ? svc.조문내용 : [svc.조문내용])
+        .filter((line: string) => /^제\d+조/.test(String(line)));
+
+      const header = [
+        `# ${info.행정규칙명 ?? ''} 조문 목차`,
+        `일련번호: ${rule_serial_no} | 시행: ${info.시행일자 ?? ''} | 소관: ${info.소관부처명 ?? ''}`,
+        '',
+      ].join('\n');
+
+      const toc = lines
+        .map((line: string) => {
+          const m = line.match(/^(제\d+조(?:의\d+)?(?:\([^)]+\))?)/);
+          return m ? m[1] : line.slice(0, 60);
+        })
+        .join('\n');
+
+      return { content: [{ type: 'text', text: header + toc }] };
+    } catch (e) {
+      return { content: [{ type: 'text', text: `오류: ${(e as Error).message}` }], isError: true };
+    }
+  },
+);
+
+// --- Tool 7: 법령 조문 목차 조회 ---
+server.tool(
+  'get_law_toc',
+  '법령ID로 법령의 조문 번호와 제목 목록(목차)만 조회합니다. ' +
+  '조문 내용은 포함하지 않아 가볍습니다. ' +
+  '목차를 보고 필요한 조문 번호를 파악한 뒤 get_law_article로 해당 조문만 조회하세요.',
+  { law_id: z.string().describe('법령ID (search_law 결과에서 획득, 예: "010199")') },
+  async ({ law_id }) => {
+    try {
+      const result: LawFullText = await getLawText(law_id);
+      const lines: string[] = [
+        `# ${result.법령명} 조문 목차`,
+        `법령ID: ${result.법령ID} | 시행일: ${result.시행일자} | 소관: ${result.소관부처명}`,
+        '',
+      ];
+      for (const article of result.조문목록) {
+        const title = article.조제목 ? `(${article.조제목})` : '';
+        lines.push(`제${article.조번호}조${title}`);
+      }
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `오류: ${(e as Error).message}` }], isError: true };
     }

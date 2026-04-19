@@ -14,6 +14,32 @@ function getOC(): string {
   return oc;
 }
 
+// ECONNRESET 등 일시적 네트워크 오류 재시도
+const RETRYABLE_CODES = new Set(['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'ENOTFOUND', 'EAI_AGAIN']);
+
+async function axiosGetWithRetry<T>(
+  url: string,
+  params: Record<string, string | number>,
+  maxRetries = 3,
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await axios.get<T>(url, { params, timeout: 15_000 });
+      return res.data;
+    } catch (e: unknown) {
+      lastError = e;
+      const code = (e as { code?: string })?.code ?? '';
+      const status = (e as { response?: { status?: number } })?.response?.status;
+      const retryable = RETRYABLE_CODES.has(code) || status === 503 || status === 429;
+      if (!retryable || attempt === maxRetries) break;
+      const wait = 1000 * (attempt + 1);
+      await new Promise(r => setTimeout(r, wait));
+    }
+  }
+  throw lastError;
+}
+
 // --- 정규화 헬퍼 (object | array 불일치 처리) ---
 
 function toArray<T>(val: T | T[] | undefined): T[] {
@@ -58,11 +84,12 @@ function parseArticle(raw: RawArticle): LawArticle {
 // --- 공개 API ---
 
 export async function searchLaw(query: string): Promise<LawSearchResult[]> {
-  const res = await axios.get(`${BASE_URL}/lawSearch.do`, {
-    params: { OC: getOC(), target: 'eflaw', type: 'JSON', query, nw: 3 },
-  });
+  const data = await axiosGetWithRetry<Record<string, unknown>>(
+    `${BASE_URL}/lawSearch.do`,
+    { OC: getOC(), target: 'eflaw', type: 'JSON', query, nw: 3 },
+  );
 
-  const items: RawLawSearchItem[] = toArray(res.data?.LawSearch?.law);
+  const items: RawLawSearchItem[] = toArray((data as any)?.LawSearch?.law);
   return items
     .filter(l => l.현행연혁코드 === '현행')
     .map(l => ({
@@ -75,11 +102,12 @@ export async function searchLaw(query: string): Promise<LawSearchResult[]> {
 }
 
 export async function getLawText(lawId: string): Promise<LawFullText> {
-  const res = await axios.get(`${BASE_URL}/lawService.do`, {
-    params: { OC: getOC(), target: 'eflaw', type: 'JSON', ID: lawId },
-  });
+  const raw = await axiosGetWithRetry<Record<string, unknown>>(
+    `${BASE_URL}/lawService.do`,
+    { OC: getOC(), target: 'eflaw', type: 'JSON', ID: lawId },
+  );
 
-  const data = res.data?.법령;
+  const data = (raw as any)?.법령;
   if (!data) throw new Error(`법령ID ${lawId}에 해당하는 법령을 찾을 수 없습니다.`);
 
   const info = data.기본정보;
@@ -130,11 +158,12 @@ function extractTierInfo(tier: any): LawTierInfo | null {
 }
 
 export async function getLawHierarchy(lawId: string): Promise<LawHierarchy> {
-  const res = await axios.get(`${BASE_URL}/lawService.do`, {
-    params: { OC: getOC(), target: 'lsStmd', ID: lawId, type: 'JSON' },
-  });
+  const raw = await axiosGetWithRetry<Record<string, unknown>>(
+    `${BASE_URL}/lawService.do`,
+    { OC: getOC(), target: 'lsStmd', ID: lawId, type: 'JSON' },
+  );
 
-  const data = res.data?.법령체계도;
+  const data = (raw as any)?.법령체계도;
   if (!data) throw new Error(`법령ID ${lawId}의 체계도를 찾을 수 없습니다.`);
 
   const 기본 = data.기본정보;
@@ -153,11 +182,12 @@ export async function getLawHierarchy(lawId: string): Promise<LawHierarchy> {
 }
 
 export async function getAdminRuleText(ruleSerialNo: string): Promise<AdminRuleText> {
-  const res = await axios.get(`${BASE_URL}/lawService.do`, {
-    params: { OC: getOC(), target: 'admrul', ID: ruleSerialNo, type: 'JSON' },
-  });
+  const raw = await axiosGetWithRetry<Record<string, unknown>>(
+    `${BASE_URL}/lawService.do`,
+    { OC: getOC(), target: 'admrul', ID: ruleSerialNo, type: 'JSON' },
+  );
 
-  const svc = res.data?.AdmRulService;
+  const svc = (raw as any)?.AdmRulService;
   if (!svc) throw new Error(`행정규칙 일련번호 ${ruleSerialNo}를 찾을 수 없습니다.`);
 
   const info = svc.행정규칙기본정보 ?? {};
@@ -187,11 +217,12 @@ export async function getLawArticle(
   // JO 형식: 조번호 4자리 + 가지번호 2자리
   const jo = String(articleNumber).padStart(4, '0') + String(subNumber).padStart(2, '0');
 
-  const res = await axios.get(`${BASE_URL}/lawService.do`, {
-    params: { OC: getOC(), target: 'eflaw', type: 'JSON', ID: lawId, JO: jo },
-  });
+  const raw = await axiosGetWithRetry<Record<string, unknown>>(
+    `${BASE_URL}/lawService.do`,
+    { OC: getOC(), target: 'eflaw', type: 'JSON', ID: lawId, JO: jo },
+  );
 
-  const articles: RawArticle[] = toArray<RawArticle>(res.data?.법령?.조문?.조문단위)
+  const articles: RawArticle[] = toArray<RawArticle>((raw as any)?.법령?.조문?.조문단위)
     .filter(j => j.조문여부 === '조문');
 
   if (articles.length === 0) return null;
