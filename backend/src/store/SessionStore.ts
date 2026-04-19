@@ -188,7 +188,7 @@ export class SessionStore {
            SELECT id
            FROM messages
            WHERE stage_session_id = ?
-           ORDER BY created_at DESC, id DESC
+           ORDER BY seq DESC
            LIMIT 1
          ) AS latest
        )`,
@@ -198,7 +198,7 @@ export class SessionStore {
 
   async getApiMessages(sessionId: string): Promise<Anthropic.MessageParam[]> {
     const [rows] = await this.pool.query<mysql.RowDataPacket[]>(
-      'SELECT api_message FROM messages WHERE stage_session_id = ? ORDER BY created_at ASC',
+      'SELECT api_message FROM messages WHERE stage_session_id = ? ORDER BY seq ASC',
       [sessionId],
     );
     return rows.map(r => JSON.parse(r.api_message as string) as Anthropic.MessageParam);

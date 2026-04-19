@@ -74,12 +74,15 @@ CREATE TABLE IF NOT EXISTS feedbacks (
 
 -- api_message: Anthropic API 메시지 형식 JSON 직렬화. 대화 재구성에 사용됨.
 CREATE TABLE IF NOT EXISTS messages (
-  id               VARCHAR(36) NOT NULL PRIMARY KEY,
+  seq              BIGINT      NOT NULL AUTO_INCREMENT,
+  id               VARCHAR(36) NOT NULL,
   stage_session_id VARCHAR(36) NOT NULL,
   agent_run_id     VARCHAR(36) NULL,
   role             ENUM('system','user','assistant') NOT NULL,
   api_message      LONGTEXT    NOT NULL,
   created_at       DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (seq),
+  UNIQUE KEY uk_id (id),
   INDEX idx_session (stage_session_id),
   FOREIGN KEY (stage_session_id) REFERENCES stage_sessions(id)
 ) ENGINE=InnoDB;

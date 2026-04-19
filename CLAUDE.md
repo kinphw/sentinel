@@ -245,10 +245,10 @@ P1 도구를 손에 쥔 에이전트가 실제로 루프를 돌며 검증 가능
 
 ### 현재 상태 요약
 
-- 현재 완료 단계: **P2 — 에이전트 엔진 (Agent Core)**
-- 현재 작업 기준선: `backend/` 골조 구현 완료. sentinel_db 초기화 완료. `.env`에 `ANTHROPIC_API_KEY` 입력 후 즉시 실행 가능
-- 현재 진행 단계: **P3/P4 준비 중**
-- 다음 우선순위: `npm run dev` 실행 테스트 → STAGE 1 도메인 프롬프트 설계 (P4)
+- 현재 완료 단계: **P5 — STAGE 2 보고서 초안 에이전트**
+- 현재 작업 기준선: P1~P5 모두 구현 완료. CLI로 STAGE 1→STAGE 2 전체 흐름 실행 가능. MariaDB 적재 및 피드백 재진입 정상 동작
+- 현재 진행 단계: **P6 대기 (HWP 편집 모듈)**
+- 다음 우선순위: few-shot 사례 보완 (보고서 품질 개선) → P6 STAGE 3 HWP 편집 모듈 설계
 - 최신 갱신일: **2026-04-19**
 
 ### Phase 상태판
@@ -257,9 +257,9 @@ P1 도구를 손에 쥔 에이전트가 실제로 루프를 돌며 검증 가능
 |------|------|------|
 | **P1** MCP 도구 레이어 | **완료** | lawquery MCP, 법령정보 MCP 연결 및 기본 조회 검증 완료 |
 | **P2** 에이전트 엔진 | **완료** | `backend/` 골조 구현. SessionStore, ToolGateway, AgentEngine, CLI 완성. MariaDB 스키마 적용 완료 |
-| **P3** 피드백 재진입 | 대기 | P2 이후 구현 |
-| **P4** STAGE 1 검토 결론 에이전트 | 대기 | P2, P3 기반 위에 구축 |
-| **P5** STAGE 2 보고서 초안 에이전트 | 대기 | STAGE 1 확정 산출물 전제 |
+| **P3** 피드백 재진입 | **완료** | AgentEngine 내 구현. 연속 user 메시지 버그(messages.seq) 수정 완료. 재진입 정상 동작 확인 |
+| **P4** STAGE 1 검토 결론 에이전트 | **완료** | 시스템 프롬프트, 3단계 조회 흐름(체계도→목차→개별조문), submit_for_review 도구, 연속 오류 강제중단 구현 |
+| **P5** STAGE 2 보고서 초안 에이전트 | **완료** | STAGE2_SYSTEM_PROMPT, RunConfig, index.ts Stage 2 흐름 구현. MCP 도구 비활성화, 확정 결론 고정 입력 |
 | **P6** STAGE 3 HWP 편집 모듈 | 대기 | Windows COM 자동화 단계 |
 
 ### 최근 완료 항목
@@ -271,13 +271,25 @@ P1 도구를 손에 쥔 에이전트가 실제로 루프를 돌며 검증 가능
   - 워커 방식: 단일 프로세스 async loop 확정
   - `SessionStore` / `ToolGateway` / `AgentEngine` / CLI(`src/index.ts`) 구현
   - HWP COM 모듈은 향후 Python subprocess로 분리 예정
+- `P3` 완료 — 피드백 재진입 구현 및 버그 수정
+  - `messages` 테이블 `seq BIGINT AUTO_INCREMENT` PK 추가 → 정렬 일관성 확보
+  - MAX_TOOL_CALLS 도달 후 피드백 재진입 시 연속 user 메시지 방지 (GPT Codex 수정)
+  - `ToolGateway` 도구 정의/결과 캐시 추가 (API 비용 최적화)
+- `P4` 완료 — STAGE 1 검토 결론 에이전트
+  - law-mcp에 `get_law_toc`, `get_admin_rule_toc`, `get_admin_rule_article` 도구 추가
+  - interpretation-mcp 키워드 AND 검색 수정, 기본 limit 20으로 상향
+  - ECONNRESET 재시도 로직 (`axiosGetWithRetry`), 연속 도구 오류 강제중단 (`consecutiveErrors`) 구현
+  - `issues.title` 컬럼 제거, `input_text` 단일 필드로 통합
+- `P5` 완료 — STAGE 2 보고서 초안 에이전트
+  - `STAGE2_SYSTEM_PROMPT` (배경/이슈/검토/계획, 개조식, 금감원 문체)
+  - `RunConfig` 패턴으로 Stage별 시스템 프롬프트·도구 목록 분리
+  - CLI에서 Stage 1 확정 후 Stage 2 자동/직접입력/건너뜀 선택 흐름 구현
 
 ### 다음 작업 체크리스트
 
-- `.env`에 `ANTHROPIC_API_KEY` 값 입력
-- `npm run dev` (backend/)로 실행 테스트
-- P4: STAGE 1 법령 검토 도메인 프롬프트 설계 및 few-shot 사례 추가
-- P3: 피드백 재진입 로직은 AgentEngine에 이미 내장됨 — 실제 테스트로 검증
+- P6: STAGE 3 HWP 편집 모듈 설계 (Python COM subprocess 방식)
+- 보고서 품질 개선: few-shot 사례 파일 (`docs/report-samples/`) 작성 및 프롬프트에 반영
+- `docs/editing-rules.md` 작성: HWP 편집 규칙 상세 (글자크기·행간·들여쓰기 등)
 
 ### 작업 인계 규칙
 

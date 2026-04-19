@@ -13,6 +13,9 @@
 
 ## Log
 
+- 2026-04-19 +09:00 | Claude Code | CLAUDE.md Phase 상태판 갱신. P3(피드백 재진입)·P4(STAGE 1 에이전트)·P5(STAGE 2 에이전트) 모두 완료로 업데이트. 현재 상태 요약 및 다음 작업 체크리스트 재정렬.
+- 2026-04-19 +09:00 | Claude Code | STAGE 2 보고서 초안 에이전트 구현. `STAGE2_SYSTEM_PROMPT`, `RunConfig` 패턴 추가. `index.ts`에 Stage 1→Stage 2 전환 흐름(자동/직접입력/건너뜀) 및 `readMultiline()` 헬퍼 구현.
+- 2026-04-19 +09:00 | Claude Code | `messages` 테이블 `seq BIGINT AUTO_INCREMENT` PK 추가. `getApiMessages`·`replaceLastMessage`를 `seq` 기준 정렬로 변경. DATETIME 1초 정밀도 한계로 인한 메시지 순서 버그 수정.
 - 2026-04-19 18:18:47 +09:00 | GPT Codex | `AgentEngine` 피드백 재진입 버그 수정 완료. MAX_TOOL_CALLS 도달 후에도 히스토리가 assistant로 종료되도록 보정하고, 기존에 user `tool_result`로 끝난 세션은 마지막 메시지 병합 방식으로 안전 재개되게 수정.
 - 2026-04-19 18:18:47 +09:00 | GPT Codex | API 비용 최적화 반영. `ToolGateway` 도구 정의/동일 인자 결과 캐시 추가, `AgentEngine`에 컨텍스트 압축 옵션 추가. 기본값은 성능 보존 우선으로 유지(`max_tokens=8192`, `tool_result` 8000자, 컨텍스트 압축 기본 비활성).
 - 2026-04-19 +09:00 | Claude Code | `AgentEngine` 피드백 재진입 버그 수정 미완료(진행중). MAX_TOOL_CALLS 도달 후 피드백 재진입 시 연속 user 메시지로 API 400 에러 발생 — 수정 작업 중단됨, 다음 세션에서 계속 필요.
