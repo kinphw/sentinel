@@ -13,6 +13,9 @@
 
 ## Log
 
+- 2026-04-19 +09:00 | Claude Code | P3 프론트엔드 구현 완료. React+Vite SPA(frontend/). Stage1 탭(이슈입력→에이전트실행→confirm/feedback), Stage2 탭(DB선택/직접입력/커스텀목차→보고서작성→confirm/feedback), EventLog SSE 실시간 스트리밍. Express REST API(backend/src/server.ts) 추가. npm run server로 기동.
+- 2026-04-19 +09:00 | Claude Code | P4 보고서 에이전트 개선. STAGE2_SYSTEM_PROMPT 구조를 현황/이슈/검토의견/향후계획으로 수정. 개조식 레벨(1/□/○/-/·) 명시. few-shot 예시 삽입. 커스텀 목차 우선 적용 로직 추가.
+- 2026-04-19 +09:00 | Claude Code | AgentEngine에 AgentEvent 이벤트 시스템 추가. onEvent 콜백으로 CLI·HTTP 양쪽 지원. index.ts에 콘솔 어댑터(makeConsoleHandler) 구현. SessionStore에 getArtifactsList 추가.
 - 2026-04-19 +09:00 | Claude Code | CLAUDE.md Phase 상태판 갱신. P3(피드백 재진입)·P4(STAGE 1 에이전트)·P5(STAGE 2 에이전트) 모두 완료로 업데이트. 현재 상태 요약 및 다음 작업 체크리스트 재정렬.
 - 2026-04-19 +09:00 | Claude Code | STAGE 2 보고서 초안 에이전트 구현. `STAGE2_SYSTEM_PROMPT`, `RunConfig` 패턴 추가. `index.ts`에 Stage 1→Stage 2 전환 흐름(자동/직접입력/건너뜀) 및 `readMultiline()` 헬퍼 구현.
 - 2026-04-19 +09:00 | Claude Code | `messages` 테이블 `seq BIGINT AUTO_INCREMENT` PK 추가. `getApiMessages`·`replaceLastMessage`를 `seq` 기준 정렬로 변경. DATETIME 1초 정밀도 한계로 인한 메시지 순서 버그 수정.

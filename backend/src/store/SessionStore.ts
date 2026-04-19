@@ -147,6 +147,30 @@ export class SessionStore {
     return rows[0] as unknown as Artifact;
   }
 
+  async getArtifactsList(params: {
+    stage?: string;
+    status?: string;
+    issueId?: string;
+    limit?: number;
+  } = {}): Promise<Artifact[]> {
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+    if (params.stage)   { conditions.push('ss.stage = ?');    values.push(params.stage); }
+    if (params.status)  { conditions.push('a.status = ?');    values.push(params.status); }
+    if (params.issueId) { conditions.push('ss.issue_id = ?'); values.push(params.issueId); }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const [rows] = await this.pool.query<mysql.RowDataPacket[]>(
+      `SELECT a.*, ss.stage AS session_stage, ss.issue_id
+       FROM artifacts a
+       JOIN stage_sessions ss ON a.stage_session_id = ss.id
+       ${where}
+       ORDER BY a.created_at DESC
+       LIMIT ?`,
+      [...values, params.limit ?? 50],
+    );
+    return rows as unknown as Artifact[];
+  }
+
   // ─── Feedback ─────────────────────────────────────────────
 
   async createFeedback(sessionId: string, content: string, authorType: AuthorType = 'user'): Promise<Feedback> {
