@@ -291,6 +291,42 @@ app.get('/api/artifacts', async (req, res) => {
   } catch (e) { res.status(500).json({ error: (e as Error).message }); }
 });
 
+// GET /api/admin/issues
+app.get('/api/admin/issues', async (req, res) => {
+  try {
+    const { query, stage, onlyMock, limit } = req.query as Record<string, string>;
+    const issues = await store.getAdminIssues({
+      query,
+      stage,
+      onlyMock: onlyMock === 'true',
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+    res.json(issues);
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+// GET /api/admin/issues/:id
+app.get('/api/admin/issues/:id', async (req, res) => {
+  try {
+    const detail = await store.getAdminIssueDetail(req.params.id);
+    res.json(detail);
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+// DELETE /api/admin/issues/:id
+app.delete('/api/admin/issues/:id', async (req, res) => {
+  try {
+    const detail = await store.getAdminIssueDetail(req.params.id);
+    if (detail.sessions.some(session => runningSession.has(session.id))) {
+      res.status(409).json({ error: '현재 실행 중인 이슈는 삭제할 수 없습니다.' });
+      return;
+    }
+
+    const result = await store.deleteIssueCascade(req.params.id);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
 // SPA fallback — 빌드된 프론트엔드가 있을 때만
 if (existsSync(frontendDist)) {
   app.get('*', (_req, res) => {

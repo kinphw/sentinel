@@ -15,6 +15,11 @@ function newId(): string {
 export class SessionStore {
   private get pool(): mysql.Pool { return getPool(); }
 
+  private isLikelyMockText(value: string | null | undefined): boolean {
+    if (!value) return false;
+    return value.toLowerCase().includes('[mock]');
+  }
+
   // ─── Issue ────────────────────────────────────────────────
 
   async createIssue(inputText: string): Promise<Issue> {
@@ -239,5 +244,256 @@ export class SessionStore {
       [sessionId],
     );
     return rows.map(r => JSON.parse(r.api_message as string) as Anthropic.MessageParam);
+  }
+
+  // ─── Admin ────────────────────────────────────────────────
+
+  async getAdminIssues(params: {
+    query?: string;
+    stage?: string;
+    onlyMock?: boolean;
+    limit?: number;
+  } = {}): Promise<Array<{
+    id: string;
+    input_text: string;
+    status: IssueStatus;
+    current_stage: Stage | null;
+    created_at: Date;
+    updated_at: Date;
+    session_count: number;
+    artifact_count: number;
+    confirmed_artifact_count: number;
+    latest_stage: Stage | null;
+    latest_artifact_summary: string | null;
+    latest_artifact_created_at: Date | null;
+    is_mock: boolean;
+  }>> {
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+
+    if (params.query?.trim()) {
+      conditions.push(
+        `(i.input_text LIKE ? OR EXISTS (
+          SELECT 1
+          FROM stage_sessions ssq
+          JOIN artifacts aq ON aq.stage_session_id = ssq.id
+          WHERE ssq.issue_id = i.id
+            AND (aq.summary LIKE ? OR aq.content LIKE ?)
+        ))`,
+      );
+      const keyword = `%${params.query.trim()}%`;
+      values.push(keyword, keyword, keyword);
+    }
+
+    if (params.stage) {
+      conditions.push('EXISTS (SELECT 1 FROM stage_sessions sst WHERE sst.issue_id = i.id AND sst.stage = ?)');
+      values.push(params.stage);
+    }
+
+    if (params.onlyMock) {
+      conditions.push(`(
+        i.input_text LIKE '%[mock]%'
+        OR EXISTS (
+          SELECT 1
+          FROM stage_sessions ssm
+          JOIN artifacts am ON am.stage_session_id = ssm.id
+          WHERE ssm.issue_id = i.id
+            AND (am.summary LIKE '%[mock]%' OR am.content LIKE '%[mock]%')
+        )
+      )`);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const [rows] = await this.pool.query<mysql.RowDataPacket[]>(
+      `SELECT
+         i.*,
+         COUNT(DISTINCT ss.id) AS session_count,
+         COUNT(a.id) AS artifact_count,
+         SUM(CASE WHEN a.status = 'confirmed' THEN 1 ELSE 0 END) AS confirmed_artifact_count,
+         latest.stage AS latest_stage,
+         latest.summary AS latest_artifact_summary,
+         latest.created_at AS latest_artifact_created_at
+       FROM issues i
+       LEFT JOIN stage_sessions ss ON ss.issue_id = i.id
+       LEFT JOIN artifacts a ON a.stage_session_id = ss.id
+       LEFT JOIN (
+         SELECT ss2.issue_id, ss2.stage, a2.summary, a2.created_at
+         FROM artifacts a2
+         JOIN stage_sessions ss2 ON ss2.id = a2.stage_session_id
+         JOIN (
+           SELECT ss3.issue_id, MAX(a3.created_at) AS latest_created_at
+           FROM artifacts a3
+           JOIN stage_sessions ss3 ON ss3.id = a3.stage_session_id
+           GROUP BY ss3.issue_id
+         ) latest_max
+           ON latest_max.issue_id = ss2.issue_id
+          AND latest_max.latest_created_at = a2.created_at
+       ) latest ON latest.issue_id = i.id
+       ${where}
+       GROUP BY
+         i.id, i.input_text, i.status, i.current_stage, i.created_at, i.updated_at,
+         latest.stage, latest.summary, latest.created_at
+       ORDER BY COALESCE(latest.created_at, i.created_at) DESC
+       LIMIT ?`,
+      [...values, params.limit ?? 100],
+    );
+
+    return rows.map((row) => ({
+      ...(row as unknown as {
+        id: string;
+        input_text: string;
+        status: IssueStatus;
+        current_stage: Stage | null;
+        created_at: Date;
+        updated_at: Date;
+        session_count: number;
+        artifact_count: number;
+        confirmed_artifact_count: number;
+        latest_stage: Stage | null;
+        latest_artifact_summary: string | null;
+        latest_artifact_created_at: Date | null;
+      }),
+      is_mock: this.isLikelyMockText(row.input_text as string)
+        || this.isLikelyMockText(row.latest_artifact_summary as string | null),
+    }));
+  }
+
+  async getAdminIssueDetail(issueId: string): Promise<{
+    issue: Issue & { is_mock: boolean };
+    sessions: Array<StageSession & {
+      artifacts: Artifact[];
+      feedbacks: Feedback[];
+      run_count: number;
+      message_count: number;
+    }>;
+  }> {
+    const issue = await this.getIssue(issueId);
+
+    const [sessionRows] = await this.pool.query<mysql.RowDataPacket[]>(
+      'SELECT * FROM stage_sessions WHERE issue_id = ? ORDER BY created_at DESC',
+      [issueId],
+    );
+
+    const sessions = await Promise.all(sessionRows.map(async (sessionRow) => {
+      const session = sessionRow as unknown as StageSession;
+      const [artifactRows] = await this.pool.query<mysql.RowDataPacket[]>(
+        'SELECT * FROM artifacts WHERE stage_session_id = ? ORDER BY version DESC, created_at DESC',
+        [session.id],
+      );
+      const [feedbackRows] = await this.pool.query<mysql.RowDataPacket[]>(
+        'SELECT * FROM feedbacks WHERE stage_session_id = ? ORDER BY created_at DESC',
+        [session.id],
+      );
+      const [runRows] = await this.pool.query<mysql.RowDataPacket[]>(
+        'SELECT COUNT(*) AS count FROM agent_runs WHERE stage_session_id = ?',
+        [session.id],
+      );
+      const [messageRows] = await this.pool.query<mysql.RowDataPacket[]>(
+        'SELECT COUNT(*) AS count FROM messages WHERE stage_session_id = ?',
+        [session.id],
+      );
+
+      return {
+        ...session,
+        artifacts: artifactRows as unknown as Artifact[],
+        feedbacks: feedbackRows as unknown as Feedback[],
+        run_count: Number((runRows[0] as { count: number }).count ?? 0),
+        message_count: Number((messageRows[0] as { count: number }).count ?? 0),
+      };
+    }));
+
+    const isMock = this.isLikelyMockText(issue.input_text)
+      || sessions.some(session => session.artifacts.some(artifact =>
+        this.isLikelyMockText(artifact.summary) || this.isLikelyMockText(artifact.content),
+      ));
+
+    return {
+      issue: { ...issue, is_mock: isMock },
+      sessions,
+    };
+  }
+
+  async deleteIssueCascade(issueId: string): Promise<{
+    deletedIssueId: string;
+    deletedSessionCount: number;
+    deletedArtifactCount: number;
+    deletedFeedbackCount: number;
+    deletedRunCount: number;
+    deletedMessageCount: number;
+  }> {
+    const conn = await this.pool.getConnection();
+
+    try {
+      await conn.beginTransaction();
+
+      const [sessionRows] = await conn.query<mysql.RowDataPacket[]>(
+        'SELECT id FROM stage_sessions WHERE issue_id = ?',
+        [issueId],
+      );
+      const sessionIds = sessionRows.map(row => String(row.id));
+
+      let deletedArtifactCount = 0;
+      let deletedFeedbackCount = 0;
+      let deletedRunCount = 0;
+      let deletedMessageCount = 0;
+
+      if (sessionIds.length > 0) {
+        const placeholders = sessionIds.map(() => '?').join(', ');
+
+        const [artifactResult] = await conn.query<mysql.ResultSetHeader>(
+          `DELETE FROM artifacts WHERE stage_session_id IN (${placeholders})`,
+          sessionIds,
+        );
+        deletedArtifactCount = artifactResult.affectedRows;
+
+        const [feedbackResult] = await conn.query<mysql.ResultSetHeader>(
+          `DELETE FROM feedbacks WHERE stage_session_id IN (${placeholders})`,
+          sessionIds,
+        );
+        deletedFeedbackCount = feedbackResult.affectedRows;
+
+        const [runResult] = await conn.query<mysql.ResultSetHeader>(
+          `DELETE FROM agent_runs WHERE stage_session_id IN (${placeholders})`,
+          sessionIds,
+        );
+        deletedRunCount = runResult.affectedRows;
+
+        const [messageResult] = await conn.query<mysql.ResultSetHeader>(
+          `DELETE FROM messages WHERE stage_session_id IN (${placeholders})`,
+          sessionIds,
+        );
+        deletedMessageCount = messageResult.affectedRows;
+
+        await conn.query(
+          `DELETE FROM stage_sessions WHERE id IN (${placeholders})`,
+          sessionIds,
+        );
+      }
+
+      const [issueResult] = await conn.query<mysql.ResultSetHeader>(
+        'DELETE FROM issues WHERE id = ?',
+        [issueId],
+      );
+
+      if (issueResult.affectedRows === 0) {
+        throw new Error(`Issue not found: ${issueId}`);
+      }
+
+      await conn.commit();
+
+      return {
+        deletedIssueId: issueId,
+        deletedSessionCount: sessionIds.length,
+        deletedArtifactCount,
+        deletedFeedbackCount,
+        deletedRunCount,
+        deletedMessageCount,
+      };
+    } catch (error) {
+      await conn.rollback();
+      throw error;
+    } finally {
+      conn.release();
+    }
   }
 }

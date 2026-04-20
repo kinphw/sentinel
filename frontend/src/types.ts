@@ -40,3 +40,48 @@ export interface LogEntry {
   text: string;
   kind: 'info' | 'tool' | 'result' | 'error' | 'cost' | 'system';
 }
+
+export interface AdminIssueSummary {
+  id: string;
+  input_text: string;
+  status: 'OPEN' | 'IN_PROGRESS' | 'WAITING_CONFIRM' | 'COMPLETED' | 'FAILED';
+  current_stage: 'STAGE_1' | 'STAGE_2' | 'STAGE_3' | null;
+  created_at: string;
+  updated_at: string;
+  session_count: number;
+  artifact_count: number;
+  confirmed_artifact_count: number;
+  latest_stage: 'STAGE_1' | 'STAGE_2' | 'STAGE_3' | null;
+  latest_artifact_summary: string | null;
+  latest_artifact_created_at: string | null;
+  is_mock: boolean;
+}
+
+export interface AdminFeedback {
+  id: string;
+  stage_session_id: string;
+  author_type: 'user' | 'reviewer';
+  content: string;
+  created_at: string;
+}
+
+export interface AdminIssueDetail {
+  issue: {
+    id: string;
+    input_text: string;
+    status: 'OPEN' | 'IN_PROGRESS' | 'WAITING_CONFIRM' | 'COMPLETED' | 'FAILED';
+    current_stage: 'STAGE_1' | 'STAGE_2' | 'STAGE_3' | null;
+    created_at: string;
+    updated_at: string;
+    is_mock: boolean;
+  };
+  sessions: Array<StageSession & {
+    created_at: string;
+    updated_at: string;
+    input_artifact_id: string | null;
+    artifacts: Artifact[];
+    feedbacks: AdminFeedback[];
+    run_count: number;
+    message_count: number;
+  }>;
+}

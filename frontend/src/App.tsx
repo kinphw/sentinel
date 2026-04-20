@@ -3,8 +3,9 @@ import * as api from './api';
 import Stage1Tab from './components/Stage1Tab';
 import Stage2Tab from './components/Stage2Tab';
 import Stage3Tab from './components/Stage3Tab';
+import AdminTab from './components/AdminTab';
 
-type Tab = 'stage1' | 'stage2' | 'stage3';
+type Tab = 'stage1' | 'stage2' | 'stage3' | 'admin';
 
 const TAB_STYLE: React.CSSProperties = {
   padding: '10px 24px',
@@ -86,6 +87,9 @@ export default function App() {
         <button style={tab === 'stage3' ? ACTIVE_TAB_STYLE : TAB_STYLE} onClick={() => setTab('stage3')}>
           Stage 3 — HWP 편집 준비
         </button>
+        <button style={tab === 'admin' ? ACTIVE_TAB_STYLE : TAB_STYLE} onClick={() => setTab('admin')}>
+          Admin — 작업결과 정리
+        </button>
       </div>
 
       {/* 탭 콘텐츠 */}
@@ -93,6 +97,7 @@ export default function App() {
         {tab === 'stage1' && <Stage1Tab />}
         {tab === 'stage2' && <Stage2Tab />}
         {tab === 'stage3' && <Stage3Tab />}
+        {tab === 'admin' && <AdminTab />}
       </main>
     </div>
   );

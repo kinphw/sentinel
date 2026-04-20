@@ -21,6 +21,15 @@ async function get<T>(path: string): Promise<T> {
   return res.json();
 }
 
+async function del<T>(path: string): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error ?? res.statusText);
+  }
+  return res.json();
+}
+
 export function createIssue(inputText: string) {
   return post<{ id: string; inputText: string }>('/issues', { inputText });
 }
@@ -65,4 +74,36 @@ export function streamSession(sessionId: string, onEvent: (e: AgentEvent) => voi
     try { onEvent(JSON.parse(e.data)); } catch { /* ignore */ }
   };
   return es;
+}
+
+export function getAdminIssues(params: {
+  query?: string;
+  stage?: string;
+  onlyMock?: boolean;
+  limit?: number;
+} = {}) {
+  const qs = new URLSearchParams(
+    Object.entries(params).reduce<Record<string, string>>((acc, [key, value]) => {
+      if (value === undefined || value === null || value === '') return acc;
+      acc[key] = String(value);
+      return acc;
+    }, {}),
+  ).toString();
+  return get<import('./types').AdminIssueSummary[]>(`/admin/issues${qs ? `?${qs}` : ''}`);
+}
+
+export function getAdminIssueDetail(issueId: string) {
+  return get<import('./types').AdminIssueDetail>(`/admin/issues/${issueId}`);
+}
+
+export function deleteAdminIssue(issueId: string) {
+  return del<{
+    ok: boolean;
+    deletedIssueId: string;
+    deletedSessionCount: number;
+    deletedArtifactCount: number;
+    deletedFeedbackCount: number;
+    deletedRunCount: number;
+    deletedMessageCount: number;
+  }>(`/admin/issues/${issueId}`);
 }
