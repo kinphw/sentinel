@@ -12,7 +12,7 @@ export default function Stage3Tab() {
   const [stage3Artifacts, setStage3Artifacts] = useState<Artifact[]>([]);
   const [selectedStage2ArtifactId, setSelectedStage2ArtifactId] = useState('');
   const [selectedStage3ArtifactId, setSelectedStage3ArtifactId] = useState('');
-  const [developmentNote, setDevelopmentNote] = useState('');
+  const [selectedInputText, setSelectedInputText] = useState('');
   const [phase, setPhase] = useState<Phase>('idle');
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [streamText, setStreamText] = useState('');
@@ -131,12 +131,17 @@ export default function Stage3Tab() {
         setStatusMsg(inputMode === 'stage2' ? 'Stage 2 결과물을 선택하세요.' : 'Stage 3 결과물을 선택하세요.');
         return;
       }
+      if (!selectedInputText.trim()) {
+        setPhase('idle');
+        setStatusMsg(inputMode === 'stage2' ? '선택한 Stage 2 결과 내용을 확인하거나 수정하세요.' : '선택한 Stage 3 결과 내용을 확인하거나 수정하세요.');
+        return;
+      }
 
       const { id: sessionId } = await api.createSession({
         issueId: selected.issue_id,
         stage: 'STAGE_3',
         inputArtifactId: selected.id,
-        developmentNote: developmentNote.trim() || undefined,
+        manualInput: selectedInputText.trim(),
       });
 
       sessionIdRef.current = sessionId;
@@ -174,6 +179,19 @@ export default function Stage3Tab() {
     ? stage2Artifacts.find(a => a.id === selectedStage2ArtifactId)
     : stage3Artifacts.find(a => a.id === selectedStage3ArtifactId);
 
+  function handleSelectArtifact(artifactId: string) {
+    if (inputMode === 'stage2') {
+      setSelectedStage2ArtifactId(artifactId);
+      const selected = stage2Artifacts.find(a => a.id === artifactId);
+      setSelectedInputText(selected?.content ?? '');
+      return;
+    }
+
+    setSelectedStage3ArtifactId(artifactId);
+    const selected = stage3Artifacts.find(a => a.id === artifactId);
+    setSelectedInputText(selected?.content ?? '');
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <h2 style={{ fontSize: 16, fontWeight: 700, color: '#1e3a5f' }}>Stage 3 — HWP 편집 준비</h2>
@@ -205,10 +223,7 @@ export default function Stage3Tab() {
         </label>
         <select
           value={inputMode === 'stage2' ? selectedStage2ArtifactId : selectedStage3ArtifactId}
-          onChange={e => {
-            if (inputMode === 'stage2') setSelectedStage2ArtifactId(e.target.value);
-            else setSelectedStage3ArtifactId(e.target.value);
-          }}
+          onChange={e => handleSelectArtifact(e.target.value)}
           disabled={phase === 'running'}
         >
           <option value="">— 선택하세요 —</option>
@@ -219,31 +234,25 @@ export default function Stage3Tab() {
           ))}
         </select>
         {selectedArtifact && (
-          <pre style={{
-            marginTop: 8, background: '#f8fafc', borderRadius: 4, padding: 10,
-            fontSize: 12, lineHeight: 1.6, maxHeight: 160, overflowY: 'auto',
-            whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#374151',
-          }}>
-            {selectedArtifact.content.slice(0, 700)}{selectedArtifact.content.length > 700 ? '…' : ''}
-          </pre>
+          <>
+            <p style={{ margin: '8px 0 6px', fontSize: 12, color: '#64748b', lineHeight: 1.6 }}>
+              선택한 문서 전문이 아래에 그대로 표시됩니다. 여기서 바로 다듬은 텍스트가 Stage 3 편집 초안 생성의 입력으로 사용됩니다.
+            </p>
+            <textarea
+              value={selectedInputText}
+              onChange={e => setSelectedInputText(e.target.value)}
+              rows={14}
+              disabled={phase === 'running'}
+              style={{ fontSize: 12, lineHeight: 1.6 }}
+            />
+          </>
         )}
-      </div>
-
-      <div>
-        <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>추가 편집 요청</label>
-        <textarea
-          value={developmentNote}
-          onChange={e => setDevelopmentNote(e.target.value)}
-          rows={4}
-          placeholder="예) 문장 길이 축약, 헤더 표현 통일, 개조식 단계 정리, 임원 보고용 톤으로 보수화"
-          disabled={phase === 'running'}
-        />
       </div>
 
       <div>
         <button
           onClick={startRun}
-          disabled={phase === 'running' || !selectedArtifact}
+          disabled={phase === 'running' || !selectedArtifact || !selectedInputText.trim()}
           style={{ background: '#0f766e', color: '#fff', padding: '8px 20px' }}
         >
           {phase === 'running' ? '⏳ 편집 중...' : '편집 초안 생성'}

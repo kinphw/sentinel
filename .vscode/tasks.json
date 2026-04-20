@@ -1,0 +1,251 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Sentinel: Cleanup Ports (Mock)",
+      "type": "process",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$ports = 3102,5174; $pids = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -in $ports } | Select-Object -ExpandProperty OwningProcess -Unique; foreach ($pid in $pids) { Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue }"
+      ],
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "never",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Sentinel: Cleanup Ports (Live)",
+      "type": "process",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$ports = 3101,5173; $pids = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -in $ports } | Select-Object -ExpandProperty OwningProcess -Unique; foreach ($pid in $pids) { Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue }"
+      ],
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "never",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Sentinel: Backend Server (Mock)",
+      "type": "process",
+      "command": "node",
+      "args": [
+        "--inspect=9229",
+        "--import",
+        "tsx",
+        "src/server.ts"
+      ],
+      "isBackground": true,
+      "options": {
+        "cwd": "${workspaceFolder}/backend",
+        "env": {
+          "PORT": "3102",
+          "SENTINEL_AGENT_MODE": "mock"
+        }
+      },
+      "problemMatcher": {
+        "owner": "custom",
+        "pattern": {
+          "regexp": "^((?!)x)$",
+          "file": 1,
+          "message": 1
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "\\[Sentinel API\\] http://localhost:3102"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "sentinel-mock"
+      }
+    },
+    {
+      "label": "Sentinel: Frontend Dev (Mock)",
+      "type": "process",
+      "command": "npm.cmd",
+      "args": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5174"
+      ],
+      "isBackground": true,
+      "options": {
+        "cwd": "${workspaceFolder}/frontend",
+        "env": {
+          "SENTINEL_BACKEND_PORT": "3102"
+        }
+      },
+      "problemMatcher": {
+        "owner": "custom",
+        "pattern": {
+          "regexp": "^((?!)x)$",
+          "file": 1,
+          "message": 1
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "Local:\\s+http://localhost:5174/"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "sentinel-mock"
+      }
+    },
+    {
+      "label": "Sentinel: Services (Mock)",
+      "dependsOrder": "parallel",
+      "dependsOn": [
+        "Sentinel: Backend Server (Mock)",
+        "Sentinel: Frontend Dev (Mock)"
+      ]
+    },
+    {
+      "label": "Sentinel: Stack (Mock)",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Sentinel: Cleanup Ports (Mock)",
+        "Sentinel: Services (Mock)"
+      ]
+    },
+    {
+      "label": "Sentinel: Backend Server (Live)",
+      "type": "process",
+      "command": "node",
+      "args": [
+        "--inspect=9230",
+        "--import",
+        "tsx",
+        "src/server.ts"
+      ],
+      "isBackground": true,
+      "options": {
+        "cwd": "${workspaceFolder}/backend",
+        "env": {
+          "PORT": "3101",
+          "SENTINEL_AGENT_MODE": "live"
+        }
+      },
+      "problemMatcher": {
+        "owner": "custom",
+        "pattern": {
+          "regexp": "^((?!)x)$",
+          "file": 1,
+          "message": 1
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "\\[Sentinel API\\] http://localhost:3101"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "sentinel-live"
+      }
+    },
+    {
+      "label": "Sentinel: Frontend Dev (Live)",
+      "type": "process",
+      "command": "npm.cmd",
+      "args": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5173"
+      ],
+      "isBackground": true,
+      "options": {
+        "cwd": "${workspaceFolder}/frontend",
+        "env": {
+          "SENTINEL_BACKEND_PORT": "3101"
+        }
+      },
+      "problemMatcher": {
+        "owner": "custom",
+        "pattern": {
+          "regexp": "^((?!)x)$",
+          "file": 1,
+          "message": 1
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "Local:\\s+http://localhost:5173/"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "sentinel-live"
+      }
+    },
+    {
+      "label": "Sentinel: Services (Live)",
+      "dependsOrder": "parallel",
+      "dependsOn": [
+        "Sentinel: Backend Server (Live)",
+        "Sentinel: Frontend Dev (Live)"
+      ]
+    },
+    {
+      "label": "Sentinel: Stack (Live)",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Sentinel: Cleanup Ports (Live)",
+        "Sentinel: Services (Live)"
+      ]
+    },
+    {
+      "label": "Sentinel: Build Backend",
+      "type": "npm",
+      "script": "build",
+      "path": "backend",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      },
+      "group": "build"
+    },
+    {
+      "label": "Sentinel: Build Frontend",
+      "type": "npm",
+      "script": "build",
+      "path": "frontend",
+      "options": {
+        "cwd": "${workspaceFolder}/frontend",
+        "env": {
+          "SENTINEL_BACKEND_PORT": "3101"
+        }
+      },
+      "group": "build"
+    },
+    {
+      "label": "Sentinel: Build All",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Sentinel: Build Backend",
+        "Sentinel: Build Frontend"
+      ],
+      "group": "build"
+    }
+  ]
+}

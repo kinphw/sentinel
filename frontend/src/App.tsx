@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import * as api from './api';
 import Stage1Tab from './components/Stage1Tab';
 import Stage2Tab from './components/Stage2Tab';
 import Stage3Tab from './components/Stage3Tab';
@@ -29,14 +30,49 @@ const DISABLED_TAB_STYLE: React.CSSProperties = {
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('stage1');
+  const [agentMode, setAgentMode] = useState<'mock' | 'live' | 'unknown'>('unknown');
+
+  useEffect(() => {
+    let mounted = true;
+
+    api.getRuntime()
+      .then(runtime => {
+        if (mounted) setAgentMode(runtime.agentMode);
+      })
+      .catch(() => {
+        if (mounted) setAgentMode('unknown');
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const badgeStyle: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '4px 10px',
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 700,
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase',
+    background: agentMode === 'live' ? '#dcfce7' : agentMode === 'mock' ? '#fef3c7' : '#e2e8f0',
+    color: agentMode === 'live' ? '#166534' : agentMode === 'mock' ? '#92400e' : '#475569',
+  };
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* 헤더 */}
       <header style={{ background: '#1e3a5f', color: '#fff', padding: '12px 24px' }}>
-        <h1 style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.3px' }}>
-          Sentinel — 법령 검토 에이전트
-        </h1>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <h1 style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.3px', margin: 0 }}>
+            Sentinel — 법령 검토 에이전트
+          </h1>
+          <span style={badgeStyle}>
+            {agentMode === 'live' ? 'LIVE' : agentMode === 'mock' ? 'MOCK' : 'BACKEND OFFLINE'}
+          </span>
+        </div>
       </header>
 
       {/* 탭 바 */}

@@ -12,8 +12,8 @@ export default function Stage2Tab() {
   const [stage2Artifacts, setStage2Artifacts] = useState<Artifact[]>([]);
   const [selectedArtifactId, setSelectedArtifactId] = useState('');
   const [selectedStage2ArtifactId, setSelectedStage2ArtifactId] = useState('');
+  const [selectedInputText, setSelectedInputText] = useState('');
   const [manualInput, setManualInput]   = useState('');
-  const [developmentNote, setDevelopmentNote] = useState('');
   const [customToc, setCustomToc]       = useState('');
   const [showCustomToc, setShowCustomToc] = useState(false);
   const [phase, setPhase]               = useState<Phase>('idle');
@@ -130,22 +130,24 @@ export default function Stage2Tab() {
       if (inputMode === 'db') {
         if (!selectedArtifactId) { setPhase('idle'); setStatusMsg('검토 결론을 선택하세요.'); return; }
         const selected = stage1Artifacts.find(a => a.id === selectedArtifactId)!;
+        if (!selectedInputText.trim()) { setPhase('idle'); setStatusMsg('선택한 검토 결론 내용을 확인하거나 수정하세요.'); return; }
         params = {
           issueId: selected.issue_id,
           stage: 'STAGE_2',
           inputArtifactId: selectedArtifactId,
+          manualInput: selectedInputText.trim(),
           customToc: customToc.trim() || undefined,
-          developmentNote: developmentNote.trim() || undefined,
         };
       } else if (inputMode === 'stage2') {
         if (!selectedStage2ArtifactId) { setPhase('idle'); setStatusMsg('기존 Stage 2 결과물을 선택하세요.'); return; }
         const selected = stage2Artifacts.find(a => a.id === selectedStage2ArtifactId)!;
+        if (!selectedInputText.trim()) { setPhase('idle'); setStatusMsg('선택한 Stage 2 결과 내용을 확인하거나 수정하세요.'); return; }
         params = {
           issueId: selected.issue_id,
           stage: 'STAGE_2',
           inputArtifactId: selectedStage2ArtifactId,
+          manualInput: selectedInputText.trim(),
           customToc: customToc.trim() || undefined,
-          developmentNote: developmentNote.trim() || undefined,
         };
       } else {
         if (!manualInput.trim()) { setPhase('idle'); setStatusMsg('검토 결론을 입력하세요.'); return; }
@@ -153,7 +155,6 @@ export default function Stage2Tab() {
           stage: 'STAGE_2',
           manualInput: manualInput.trim(),
           customToc: customToc.trim() || undefined,
-          developmentNote: developmentNote.trim() || undefined,
         };
       }
 
@@ -191,6 +192,23 @@ export default function Stage2Tab() {
   }
 
   const isRunning = phase === 'running';
+  const canSubmit = inputMode === 'db'
+    ? Boolean(selectedArtifactId && selectedInputText.trim())
+    : inputMode === 'stage2'
+      ? Boolean(selectedStage2ArtifactId && selectedInputText.trim())
+      : Boolean(manualInput.trim());
+
+  function handleSelectStage1Artifact(artifactId: string) {
+    setSelectedArtifactId(artifactId);
+    const selected = stage1Artifacts.find(a => a.id === artifactId);
+    setSelectedInputText(selected?.content ?? '');
+  }
+
+  function handleSelectStage2Artifact(artifactId: string) {
+    setSelectedStage2ArtifactId(artifactId);
+    const selected = stage2Artifacts.find(a => a.id === artifactId);
+    setSelectedInputText(selected?.content ?? '');
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -220,7 +238,7 @@ export default function Stage2Tab() {
           <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>확정된 검토 결론</label>
           <select
             value={selectedArtifactId}
-            onChange={e => setSelectedArtifactId(e.target.value)}
+            onChange={e => handleSelectStage1Artifact(e.target.value)}
             disabled={isRunning}
           >
             <option value="">— 선택하세요 —</option>
@@ -230,18 +248,20 @@ export default function Stage2Tab() {
               </option>
             ))}
           </select>
-          {selectedArtifactId && (() => {
-            const a = stage1Artifacts.find(x => x.id === selectedArtifactId);
-            return a ? (
-              <pre style={{
-                marginTop: 8, background: '#f8fafc', borderRadius: 4, padding: 10,
-                fontSize: 12, lineHeight: 1.6, maxHeight: 160, overflowY: 'auto',
-                whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#374151',
-              }}>
-                {a.content.slice(0, 600)}{a.content.length > 600 ? '…' : ''}
-              </pre>
-            ) : null;
-          })()}
+          {selectedArtifactId && (
+            <>
+              <p style={{ margin: '8px 0 6px', fontSize: 12, color: '#64748b', lineHeight: 1.6 }}>
+                선택한 검토 결론 전문이 아래에 그대로 표시됩니다. 필요한 부분은 바로 수정한 뒤 그 내용을 Stage 2 입력으로 사용합니다.
+              </p>
+              <textarea
+                value={selectedInputText}
+                onChange={e => setSelectedInputText(e.target.value)}
+                rows={12}
+                disabled={isRunning}
+                style={{ fontSize: 12, lineHeight: 1.6 }}
+              />
+            </>
+          )}
         </div>
       )}
 
@@ -250,7 +270,7 @@ export default function Stage2Tab() {
           <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>기존 Stage 2 결과물</label>
           <select
             value={selectedStage2ArtifactId}
-            onChange={e => setSelectedStage2ArtifactId(e.target.value)}
+            onChange={e => handleSelectStage2Artifact(e.target.value)}
             disabled={isRunning}
           >
             <option value="">— 선택하세요 —</option>
@@ -260,18 +280,20 @@ export default function Stage2Tab() {
               </option>
             ))}
           </select>
-          {selectedStage2ArtifactId && (() => {
-            const a = stage2Artifacts.find(x => x.id === selectedStage2ArtifactId);
-            return a ? (
-              <pre style={{
-                marginTop: 8, background: '#f8fafc', borderRadius: 4, padding: 10,
-                fontSize: 12, lineHeight: 1.6, maxHeight: 160, overflowY: 'auto',
-                whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#374151',
-              }}>
-                {a.content.slice(0, 600)}{a.content.length > 600 ? '…' : ''}
-              </pre>
-            ) : null;
-          })()}
+          {selectedStage2ArtifactId && (
+            <>
+              <p style={{ margin: '8px 0 6px', fontSize: 12, color: '#64748b', lineHeight: 1.6 }}>
+                선택한 Stage 2 결과 전문이 아래에 그대로 표시됩니다. 초안을 직접 다듬은 뒤 그 수정본으로 다음 보고서 초안을 생성합니다.
+              </p>
+              <textarea
+                value={selectedInputText}
+                onChange={e => setSelectedInputText(e.target.value)}
+                rows={12}
+                disabled={isRunning}
+                style={{ fontSize: 12, lineHeight: 1.6 }}
+              />
+            </>
+          )}
         </div>
       )}
 
@@ -289,19 +311,6 @@ export default function Stage2Tab() {
         </div>
       )}
 
-      {inputMode !== 'manual' && (
-        <div>
-          <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13 }}>추가 개발 요청</label>
-          <textarea
-            value={developmentNote}
-            onChange={e => setDevelopmentNote(e.target.value)}
-            rows={3}
-            placeholder="예) 목차 재정리, 임원 보고용 톤으로 수정, 특정 파트 간결화 등"
-            disabled={isRunning}
-          />
-        </div>
-      )}
-
       {/* 목차 커스터마이징 */}
       <div>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
@@ -313,12 +322,15 @@ export default function Stage2Tab() {
           />
           보고서 목차 직접 지정 (기본: 현황 / 이슈 / 검토의견 / 향후계획)
         </label>
+        <p style={{ margin: '6px 0 0 24px', fontSize: 12, lineHeight: 1.6, color: '#64748b' }}>
+          이 기능은 세부 문장까지 고정하는 입력이 아니라, 보고서의 큰 흐름과 개략적인 목차를 잡아주는 가이드입니다.
+        </p>
         {showCustomToc && (
           <textarea
             value={customToc}
             onChange={e => setCustomToc(e.target.value)}
             rows={3}
-            placeholder="예) 1. 배경&#10;2. 이슈&#10;3. 처리방향&#10;4. 향후조치"
+            placeholder="예) 1. 배경&#10;2. 핵심 쟁점&#10;3. 검토 방향&#10;4. 향후 조치"
             disabled={isRunning}
             style={{ marginTop: 8 }}
           />
@@ -328,7 +340,7 @@ export default function Stage2Tab() {
       <div>
         <button
           onClick={startRun}
-          disabled={isRunning || (inputMode === 'db' ? !selectedArtifactId : inputMode === 'stage2' ? !selectedStage2ArtifactId : !manualInput.trim())}
+          disabled={isRunning || !canSubmit}
           style={{ background: '#7c3aed', color: '#fff', padding: '8px 20px' }}
         >
           {isRunning ? '⏳ 보고서 작성 중...' : inputMode === 'stage2' ? '선택 결과 발전' : '보고서 작성'}

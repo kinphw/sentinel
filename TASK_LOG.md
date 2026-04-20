@@ -13,6 +13,9 @@
 
 ## Log
 
+- 2026-04-20 21:41:30 +09:00 | GPT Codex | `document-mcp` 추가. `fss_document_db.fss_documents`를 대상으로 `search_fss_documents`(폴더/파일명 후보 검색)와 `get_fss_document`(단건 본문 조회) 도구를 구현하고, Stage 1 조사 순서 및 프로젝트 문서를 내부 검토문서 기준으로 갱신.
+- 2026-04-20 19:56:23 +09:00 | GPT Codex | 개발용 mock 에이전트 모드 추가. `SENTINEL_AGENT_MODE=mock`에서 Anthropic 실호출 없이 Stage1~3 SSE/feedback/artifact 흐름을 시뮬레이션하고, VS Code task/launch는 기본 mock로 실행되도록 조정. PM2는 `env_production` 기본 live, `env_mock` 선택 mock 지원.
+- 2026-04-19 21:42:51 +09:00 | GPT Codex | 개발/운영 실행 설정 추가. 백엔드 기본 포트를 `3101`로 변경하고, `frontend/vite.config.ts` 프록시를 연동. `.vscode/tasks.json`·`launch.json`으로 윈도우 개발용 실행/디버그 세팅 추가, 루트 `ecosystem.config.cjs`로 Ubuntu PM2 운영 세팅 추가.
 - 2026-04-19 21:28:56 +09:00 | GPT Codex | Stage 재개발 흐름 확장. `Stage 1`은 기존 Stage1 artifact 선택 후 새 Stage1 세션으로 발전 가능, `Stage 2`는 Stage1 확정본 또는 기존 Stage2 artifact를 입력으로 새 Stage2 세션 생성 가능, `Stage 3`는 Stage2/기존 Stage3 artifact 선택 기반 편집 초안 세션과 별도 artifact 저장 지원.
 - 2026-04-19 +09:00 | Claude Code | P3 프론트엔드 구현 완료. React+Vite SPA(frontend/). Stage1 탭(이슈입력→에이전트실행→confirm/feedback), Stage2 탭(DB선택/직접입력/커스텀목차→보고서작성→confirm/feedback), EventLog SSE 실시간 스트리밍. Express REST API(backend/src/server.ts) 추가. npm run server로 기동.
 - 2026-04-19 +09:00 | Claude Code | P4 보고서 에이전트 개선. STAGE2_SYSTEM_PROMPT 구조를 현황/이슈/검토의견/향후계획으로 수정. 개조식 레벨(1/□/○/-/·) 명시. few-shot 예시 삽입. 커스텀 목차 우선 적용 로직 추가.

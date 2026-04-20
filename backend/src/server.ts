@@ -13,7 +13,8 @@ import { closePool } from './db/connection.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: resolve(__dirname, '../../.env') });
 
-const PORT = parseInt(process.env.PORT ?? '3000', 10);
+const PORT = parseInt(process.env.PORT ?? '3101', 10);
+const AGENT_MODE = process.env.SENTINEL_AGENT_MODE?.trim().toLowerCase() === 'mock' ? 'mock' : 'live';
 
 // ── 의존성 초기화 ─────────────────────────────────────────────
 
@@ -115,11 +116,15 @@ function buildInitialInput(
 
   if (stage === 'STAGE_2') {
     if (opts.sourceArtifact) {
-      const label = opts.sourceArtifact.session_stage === 'STAGE_2' ? '기존 보고서 초안' : '검토 결론';
+      const hasEditedInput = Boolean(opts.manualInput?.trim());
+      const sourceText = opts.manualInput?.trim() || opts.sourceArtifact.content;
+      const label = opts.sourceArtifact.session_stage === 'STAGE_2'
+        ? hasEditedInput ? '사용자 수정본 보고서 초안' : '기존 보고서 초안'
+        : hasEditedInput ? '사용자 수정본 검토 결론' : '검토 결론';
       const action = opts.sourceArtifact.session_stage === 'STAGE_2'
         ? '위 기존 보고서를 바탕으로 요청사항을 반영한 새로운 보고서 초안을 작성해주세요.'
         : '위 검토 결론을 바탕으로 새로운 보고서 초안을 작성해주세요.';
-      return `[${label}]\n${opts.sourceArtifact.content}${noteSection}\n\n${action}`;
+      return `[${label}]\n${sourceText}${noteSection}\n\n${action}`;
     }
 
     if (opts.manualInput?.trim()) {
@@ -131,9 +136,13 @@ function buildInitialInput(
 
   if (stage === 'STAGE_3') {
     if (!opts.sourceArtifact) return undefined;
-    const label = opts.sourceArtifact.session_stage === 'STAGE_3' ? '기존 편집본' : '보고서 초안';
+    const hasEditedInput = Boolean(opts.manualInput?.trim());
+    const sourceText = opts.manualInput?.trim() || opts.sourceArtifact.content;
+    const label = opts.sourceArtifact.session_stage === 'STAGE_3'
+      ? hasEditedInput ? '사용자 수정본 편집본' : '기존 편집본'
+      : hasEditedInput ? '사용자 수정본 보고서 초안' : '보고서 초안';
     return (
-      `[${label}]\n${opts.sourceArtifact.content}` +
+      `[${label}]\n${sourceText}` +
       `${noteSection}\n\n위 문서를 바탕으로 내용의 결론은 유지한 채 편집용 새 초안을 작성해주세요.`
     );
   }
@@ -154,6 +163,14 @@ if (existsSync(frontendDist)) {
 }
 
 // ── REST API ──────────────────────────────────────────────────
+
+// GET /api/runtime
+app.get('/api/runtime', (_req, res) => {
+  res.json({
+    agentMode: AGENT_MODE,
+    port: PORT,
+  });
+});
 
 // POST /api/issues
 app.post('/api/issues', async (req, res) => {
@@ -284,13 +301,13 @@ if (existsSync(frontendDist)) {
 // ── 서버 시작 ─────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (AGENT_MODE === 'live' && !process.env.ANTHROPIC_API_KEY) {
     console.error('[오류] ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.');
     process.exit(1);
   }
 
   await gateway.connect();
-  console.log('[ToolGateway] MCP 서버 연결 완료');
+  console.log(`[ToolGateway] MCP 서버 연결 완료 (${AGENT_MODE} mode)`);
 
   app.listen(PORT, () => {
     console.log(`[Sentinel API] http://localhost:${PORT}`);

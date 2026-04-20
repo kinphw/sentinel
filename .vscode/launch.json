@@ -1,0 +1,61 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Sentinel: Attach Backend (Mock)",
+      "type": "node",
+      "request": "attach",
+      "port": 9229,
+      "cwd": "${workspaceFolder}/backend",
+      "restart": true,
+      "skipFiles": [
+        "<node_internals>/**"
+      ]
+    },
+    {
+      "name": "Sentinel: Attach Backend (Live)",
+      "type": "node",
+      "request": "attach",
+      "port": 9230,
+      "cwd": "${workspaceFolder}/backend",
+      "restart": true,
+      "skipFiles": [
+        "<node_internals>/**"
+      ]
+    },
+    {
+      "name": "Sentinel: Debug Frontend (Mock)",
+      "type": "pwa-chrome",
+      "request": "launch",
+      "url": "http://localhost:5174",
+      "webRoot": "${workspaceFolder}/frontend/src"
+    },
+    {
+      "name": "Sentinel: Debug Frontend (Live)",
+      "type": "pwa-chrome",
+      "request": "launch",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/frontend/src"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Sentinel: Full Stack Debug (Mock)",
+      "configurations": [
+        "Sentinel: Attach Backend (Mock)",
+        "Sentinel: Debug Frontend (Mock)"
+      ],
+      "preLaunchTask": "Sentinel: Stack (Mock)",
+      "stopAll": true
+    },
+    {
+      "name": "Sentinel: Full Stack Debug (Live)",
+      "configurations": [
+        "Sentinel: Attach Backend (Live)",
+        "Sentinel: Debug Frontend (Live)"
+      ],
+      "preLaunchTask": "Sentinel: Stack (Live)",
+      "stopAll": true
+    }
+  ]
+}

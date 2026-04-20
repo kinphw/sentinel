@@ -18,6 +18,18 @@
         "DB_NAME": "ldb_i",
         "TABLE_NAME": "db_i"
       }
+    },
+    "document": {
+      "command": "node",
+      "args": ["C:/projects/sentinel/mcp/document-mcp/dist/index.js"],
+      "env": {
+        "MYSQL_HOST": "localhost",
+        "MYSQL_PORT": "3306",
+        "MYSQL_USER": "ddbuser",
+        "MYSQL_PASSWORD": "1226",
+        "DB_NAME": "fss_document_db",
+        "TABLE_NAME": "documents"
+      }
     }
   }
 }

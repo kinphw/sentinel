@@ -25,6 +25,10 @@ export function createIssue(inputText: string) {
   return post<{ id: string; inputText: string }>('/issues', { inputText });
 }
 
+export function getRuntime() {
+  return get<{ agentMode: 'mock' | 'live'; port: number }>('/runtime');
+}
+
 export function createSession(params: {
   issueId?: string;
   stage: 'STAGE_1' | 'STAGE_2' | 'STAGE_3';
