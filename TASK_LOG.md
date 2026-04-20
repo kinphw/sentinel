@@ -13,6 +13,7 @@
 
 ## Log
 
+- 2026-04-20 22:01:00 +09:00 | GPT Codex | `CLAUDE.md`를 현재 구현 기준으로 정리. 백엔드 스택(Node.js/TypeScript, REST+SSE), 실제 디렉토리 구조, P3/P4 완료 상태, mock/live 실행 설정 및 관련 문서 인덱스를 최신 상태로 갱신.
 - 2026-04-20 21:41:30 +09:00 | GPT Codex | `document-mcp` 추가. `fss_document_db.fss_documents`를 대상으로 `search_fss_documents`(폴더/파일명 후보 검색)와 `get_fss_document`(단건 본문 조회) 도구를 구현하고, Stage 1 조사 순서 및 프로젝트 문서를 내부 검토문서 기준으로 갱신.
 - 2026-04-20 19:56:23 +09:00 | GPT Codex | 개발용 mock 에이전트 모드 추가. `SENTINEL_AGENT_MODE=mock`에서 Anthropic 실호출 없이 Stage1~3 SSE/feedback/artifact 흐름을 시뮬레이션하고, VS Code task/launch는 기본 mock로 실행되도록 조정. PM2는 `env_production` 기본 live, `env_mock` 선택 mock 지원.
 - 2026-04-19 21:42:51 +09:00 | GPT Codex | 개발/운영 실행 설정 추가. 백엔드 기본 포트를 `3101`로 변경하고, `frontend/vite.config.ts` 프록시를 연동. `.vscode/tasks.json`·`launch.json`으로 윈도우 개발용 실행/디버그 세팅 추가, 루트 `ecosystem.config.cjs`로 Ubuntu PM2 운영 세팅 추가.
