@@ -2,44 +2,29 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Sentinel: Launch Backend",
-      "type": "node",
+      // 기본 개발 모드: F5 한 번에 backend(--inspect 포함) + Vite를 단일 터미널에서 띄우고
+      // backend의 노드 자식 프로세스에 자동으로 디버거 attach.
+      // Stop 버튼(또는 Shift+F5) → 터미널에 SIGINT → concurrently가 둘 다 종료.
+      // postDebugTask가 안전망으로 5173/3101 잔여 프로세스 정리.
+      "name": "Sentinel: Dev",
+      "type": "node-terminal",
       "request": "launch",
-      "runtimeArgs": ["--import", "tsx"],
-      "program": "${workspaceFolder}/backend/src/server.ts",
+      "command": "npm run dev:full",
       "cwd": "${workspaceFolder}/backend",
-      "env": { "PORT": "3101" },
-      "console": "integratedTerminal",
-      "internalConsoleOptions": "neverOpen",
-      "skipFiles": [
-        "<node_internals>/**",
-        "**/node_modules/**"
-      ]
+      "postDebugTask": "Sentinel: Cleanup Ports"
     },
     {
-      "name": "Sentinel: Debug Frontend",
+      // 선택: 별도 Chrome 디버거가 필요할 때만 띄움. 기본은 평소 쓰는 브라우저로 직접 접속 권장.
+      "name": "Sentinel: Debug Frontend (Chrome)",
       "type": "pwa-chrome",
       "request": "launch",
       "url": "http://localhost:5173",
-      "preLaunchTask": "Sentinel: Wait Backend",
       "webRoot": "${workspaceFolder}/frontend/src",
       "userDataDir": "${workspaceFolder}/.vscode/chrome-debug-profile",
       "runtimeArgs": [
         "--no-first-run",
         "--no-default-browser-check"
       ]
-    }
-  ],
-  "compounds": [
-    {
-      "name": "Sentinel: Full Stack Debug",
-      "configurations": [
-        "Sentinel: Launch Backend",
-        "Sentinel: Debug Frontend"
-      ],
-      "preLaunchTask": "Sentinel: Stack",
-      "postDebugTask": "Sentinel: Cleanup Ports",
-      "stopAll": true
     }
   ]
 }

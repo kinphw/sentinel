@@ -2,6 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
+      // 5173/3101에 잔여 프로세스가 남았을 때 죽이는 안전망. launch.json의 postDebugTask로 사용.
       "label": "Sentinel: Cleanup Ports",
       "type": "process",
       "command": "powershell",
@@ -19,76 +20,11 @@
       }
     },
     {
-      "label": "Sentinel: Wait Backend",
-      "type": "process",
-      "command": "powershell",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        "$deadline = (Get-Date).AddSeconds(60); do { try { $res = Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:3101/api/runtime' -TimeoutSec 2; if ($res.StatusCode -ge 200 -and $res.StatusCode -lt 500) { exit 0 } } catch { }; Start-Sleep -Milliseconds 500 } while ((Get-Date) -lt $deadline); Write-Error 'Sentinel backend did not become ready on http://localhost:3101/api/runtime'; exit 1"
-      ],
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "never",
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "Sentinel: Frontend Dev",
-      "type": "process",
-      "command": "npm.cmd",
-      "args": [
-        "run",
-        "dev",
-        "--",
-        "--port",
-        "5173"
-      ],
-      "isBackground": true,
-      "options": {
-        "cwd": "${workspaceFolder}/frontend",
-        "env": {
-          "SENTINEL_BACKEND_PORT": "3101"
-        }
-      },
-      "problemMatcher": {
-        "owner": "custom",
-        "pattern": {
-          "regexp": "^((?!)x)$",
-          "file": 1,
-          "message": 1
-        },
-        "background": {
-          "activeOnStart": true,
-          "beginsPattern": ".",
-          "endsPattern": "Local:\\s+http://localhost:5173/"
-        }
-      },
-      "presentation": {
-        "reveal": "always",
-        "panel": "dedicated",
-        "group": "sentinel",
-        "close": true
-      }
-    },
-    {
-      "label": "Sentinel: Stack",
-      "dependsOrder": "sequence",
-      "dependsOn": [
-        "Sentinel: Cleanup Ports",
-        "Sentinel: Frontend Dev"
-      ]
-    },
-    {
       "label": "Sentinel: Build Backend",
       "type": "npm",
       "script": "build",
       "path": "backend",
-      "options": {
-        "cwd": "${workspaceFolder}/backend"
-      },
+      "options": { "cwd": "${workspaceFolder}/backend" },
       "group": "build"
     },
     {
@@ -98,19 +34,14 @@
       "path": "frontend",
       "options": {
         "cwd": "${workspaceFolder}/frontend",
-        "env": {
-          "SENTINEL_BACKEND_PORT": "3101"
-        }
+        "env": { "SENTINEL_BACKEND_PORT": "3101" }
       },
       "group": "build"
     },
     {
       "label": "Sentinel: Build All",
       "dependsOrder": "sequence",
-      "dependsOn": [
-        "Sentinel: Build Backend",
-        "Sentinel: Build Frontend"
-      ],
+      "dependsOn": ["Sentinel: Build Backend", "Sentinel: Build Frontend"],
       "group": "build"
     }
   ]

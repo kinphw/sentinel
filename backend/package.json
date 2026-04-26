@@ -5,9 +5,13 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "server": "tsx src/server.ts",
+    "server:debug": "tsx --inspect=9229 src/server.ts",
+    "dev:full": "concurrently -k -n be,fe -c blue,green \"npm:server:debug\" \"npm --prefix ../frontend run dev\"",
     "build": "tsc",
     "start": "node dist/index.js",
-    "start:server": "node dist/server.js"
+    "start:server": "node dist/server.js",
+    "build:all": "npm run build && npm --prefix ../frontend run build",
+    "release": "npm run build:all && pm2 startOrReload ../ecosystem.config.cjs --only sentinel"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
@@ -21,6 +25,7 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.1",
     "@types/node": "^22.15.3",
+    "concurrently": "^9.2.1",
     "tsx": "^4.19.3",
     "typescript": "^5.8.3"
   }
