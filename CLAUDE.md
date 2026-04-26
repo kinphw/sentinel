@@ -144,7 +144,7 @@ HWP 형식화·폴리싱은 별도 프로젝트 [Sentinel-Forge](../sentinel-for
 
 Sentinel STAGE 2의 산출물은 [docs/markdown-spec.md](docs/markdown-spec.md)에 정의된 개조식 markdown입니다. 이 파일은 Sentinel-Forge의 [`spec/markdown-spec.md`](../sentinel-forge/spec/markdown-spec.md)와 항상 동일하게 유지되며, 두 프로젝트의 결합 계약입니다.
 
-**핵심 원칙**: 마크다운은 **논리 구조**(메타데이터·층위·요약단어·주석·강조·결론 화살표 6종)만 표기. 시각적 서식(폰트·자간·색상·들여쓰기 등)은 모두 Sentinel-Forge 책임.
+**핵심 원칙**: 마크다운은 **논리 구조**(메타데이터·층위·요약단어·주석·강조·결론 화살표·callout 박스 7종)만 표기. 시각적 서식(폰트·자간·색상·들여쓰기 등)은 모두 Sentinel-Forge 책임.
 
 상세 규범·예시는 [docs/markdown-spec.md](docs/markdown-spec.md) 참조.
 
