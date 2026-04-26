@@ -18,27 +18,35 @@ const server = new McpServer({
 server.tool(
   'search_interpretation',
   '키워드로 금감원 법령해석·비조치의견서·현장건의 과제를 검색합니다. ' +
-  '공백으로 구분된 키워드는 각각 AND 조건으로 처리됩니다 (예: "경제적 이익 카드" → 세 단어 모두 포함). ' +
+  '공백으로 구분된 어절을 match 파라미터에 따라 AND 또는 OR로 결합합니다 (기본 AND). ' +
+  '추천 전략: 최초 검색은 match="or"로 어절 2~4개를 넓게 던져 후보를 확보한 뒤, ' +
+  '결과가 너무 많거나 부정확하면 match="and"로 어절을 추가해 좁힙니다. ' +
+  '결과가 0건이면 어절을 더 짧게 쪼개거나 1개 어절만 사용해 재시도하세요. ' +
   '제목·질의요지·회답·이유 전체를 대상으로 검색하며 결과 목록(id, 제목, 구분, 분야, 회신일자)을 반환합니다. ' +
   '전문은 id로 get_interpretation을 호출하세요.',
   {
-    query: z.string().describe('검색 키워드 (예: "선불전자지급수단", "전자금융거래법 적용범위")'),
+    query: z.string().describe('검색 키워드. 공백으로 어절 분리 (예: "선불전자지급수단", "선불 계좌 정보")'),
     category: z.enum(['법령해석', '비조치의견서', '현장건의 과제'])
       .optional()
       .describe('구분 필터: "법령해석" | "비조치의견서" | "현장건의 과제" (생략 시 전체)'),
+    match: z.enum(['and', 'or']).default('and')
+      .describe('어절 결합 방식. "or"=하나라도 포함하면 매칭(넓게), "and"=모두 포함해야 매칭(좁게). 최초 탐색은 "or" 권장'),
     limit: z.number().int().min(1).max(50).default(20)
       .describe('반환할 최대 건수 (기본 20, 최대 50)'),
   },
-  async ({ query, category, limit }) => {
+  async ({ query, category, match, limit }) => {
     try {
-      const results = await searchInterpretation(query, category, limit);
+      const results = await searchInterpretation(query, category, limit, match);
       if (results.length === 0) {
-        return { content: [{ type: 'text', text: `"${query}"에 해당하는 결과를 찾을 수 없습니다.` }] };
+        const hint = match === 'and'
+          ? ' (어절을 줄이거나 match="or"로 재시도해 보세요.)'
+          : ' (어절을 더 짧게 쪼개거나 1개 어절로 재시도해 보세요.)';
+        return { content: [{ type: 'text', text: `"${query}" (match=${match})에 해당하는 결과를 찾을 수 없습니다.${hint}` }] };
       }
       const text = results.map(r =>
         `[id: ${r.id}] [${r.구분}] ${r.제목}\n  분야: ${r.분야} | 회신: ${r.회신일자} | 일련번호: ${r.일련번호}`
       ).join('\n\n');
-      return { content: [{ type: 'text', text: `총 ${results.length}건\n\n${text}` }] };
+      return { content: [{ type: 'text', text: `총 ${results.length}건 (match=${match})\n\n${text}` }] };
     } catch (e) {
       return { content: [{ type: 'text', text: `오류: ${(e as Error).message}` }], isError: true };
     }

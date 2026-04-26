@@ -16,19 +16,26 @@ const server = new McpServer({
 
 server.tool(
   'search_fss_documents',
-  '금융감독원 내부 문서를 폴더명(directory)과 파일명(filename) 기준으로 검색합니다. ' +
-  '공백으로 구분된 검색어는 각각 AND 조건으로 처리되며, 본문 내용은 검색하지 않습니다. ' +
-  '사람이 Everything으로 후보 문서를 먼저 고르는 단계와 같은 용도이며, 결과의 id로 get_fss_document를 호출해 본문을 확인하세요.',
+  '금융감독원 내부 문서를 폴더명(directory)과 파일명(filename) 기준으로 검색합니다. 본문은 검색하지 않습니다. ' +
+  '공백으로 구분된 어절을 match 파라미터에 따라 AND 또는 OR로 결합합니다 (기본 AND). ' +
+  '추천 전략: 최초 검색은 match="or"로 어절 2~4개를 넓게 던져 후보를 확보한 뒤, ' +
+  '결과가 많으면 match="and"로 어절을 추가해 좁힙니다. 결과가 0건이면 어절을 1개로 줄여 재시도하세요. ' +
+  '결과의 id로 get_fss_document를 호출해 본문을 확인하세요.',
   {
-    query: z.string().describe('폴더명/파일명 검색어 (예: "선불전자지급수단 발행", "간편송금 PG")'),
+    query: z.string().describe('폴더명/파일명 검색어. 공백으로 어절 분리 (예: "선불 계좌 정보", "간편송금")'),
+    match: z.enum(['and', 'or']).default('and')
+      .describe('어절 결합 방식. "or"=하나라도 포함하면 매칭(넓게), "and"=모두 포함해야 매칭(좁게). 최초 탐색은 "or" 권장'),
     limit: z.number().int().min(1).max(50).default(20)
       .describe('반환할 최대 건수 (기본 20, 최대 50)'),
   },
-  async ({ query, limit }) => {
+  async ({ query, match, limit }) => {
     try {
-      const results = await searchFssDocuments(query, limit);
+      const results = await searchFssDocuments(query, limit, match);
       if (results.length === 0) {
-        return { content: [{ type: 'text', text: `"${query}"에 해당하는 내부 문서 후보를 찾을 수 없습니다.` }] };
+        const hint = match === 'and'
+          ? ' (어절을 줄이거나 match="or"로 재시도해 보세요.)'
+          : ' (어절을 더 짧게 쪼개거나 1개 어절로 재시도해 보세요.)';
+        return { content: [{ type: 'text', text: `"${query}" (match=${match})에 해당하는 내부 문서 후보를 찾을 수 없습니다.${hint}` }] };
       }
 
       const text = results.map(result => [
@@ -37,7 +44,7 @@ server.tool(
         `  extension: ${result.extension} | size: ${result.file_size} | mtime: ${result.file_mtime} | parsed_at: ${result.parsed_at}`,
       ].join('\n')).join('\n\n');
 
-      return { content: [{ type: 'text', text: `총 ${results.length}건\n\n${text}` }] };
+      return { content: [{ type: 'text', text: `총 ${results.length}건 (match=${match})\n\n${text}` }] };
     } catch (error) {
       return { content: [{ type: 'text', text: `오류: ${(error as Error).message}` }], isError: true };
     }

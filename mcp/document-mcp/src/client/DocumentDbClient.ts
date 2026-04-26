@@ -13,6 +13,8 @@ function getPool(): mysql.Pool {
       database: process.env.DB_NAME,
       waitForConnections: true,
       connectionLimit: 5,
+      // DATE/DATETIME을 raw string으로 받아 timezone 변환에 의한 ±1일 오프셋 방지
+      dateStrings: true,
     });
   }
   return pool;
@@ -25,7 +27,14 @@ function getTable(): string {
 function formatDateTime(value: Date | string | null): string {
   if (!value) return '';
   if (typeof value === 'string') return value;
-  return value.toISOString().replace('T', ' ').slice(0, 19);
+  // dateStrings: true 설정 시 도달하지 않으나, fallback으로 로컬 컴포넌트 사용
+  const yyyy = value.getFullYear();
+  const mm = String(value.getMonth() + 1).padStart(2, '0');
+  const dd = String(value.getDate()).padStart(2, '0');
+  const HH = String(value.getHours()).padStart(2, '0');
+  const MM = String(value.getMinutes()).padStart(2, '0');
+  const SS = String(value.getSeconds()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd} ${HH}:${MM}:${SS}`;
 }
 
 function joinPath(directory: string, filename: string): string {
@@ -34,7 +43,11 @@ function joinPath(directory: string, filename: string): string {
   return `${directory}\\${filename}`;
 }
 
-export async function searchFssDocuments(query: string, limit: number = 20): Promise<FssDocumentSummary[]> {
+export async function searchFssDocuments(
+  query: string,
+  limit: number = 20,
+  match: 'and' | 'or' = 'and',
+): Promise<FssDocumentSummary[]> {
   const table = getTable();
   const keywords = query.split(/\s+/).map(keyword => keyword.trim()).filter(Boolean);
   if (keywords.length === 0) return [];
@@ -48,11 +61,12 @@ export async function searchFssDocuments(query: string, limit: number = 20): Pro
 
   params.push(limit);
 
+  const joiner = match === 'or' ? ' OR ' : ' AND ';
   const sql = `
     SELECT id, directory, filename, extension, file_size, file_mtime, parsed_at
     FROM \`${table}\`
     WHERE parse_status = 'success'
-      AND ${whereClauses.join(' AND ')}
+      AND (${whereClauses.join(joiner)})
     ORDER BY parsed_at DESC, id DESC
     LIMIT ?
   `;

@@ -13,6 +13,8 @@ function getPool(): mysql.Pool {
       database: process.env.DB_NAME,
       waitForConnections: true,
       connectionLimit: 5,
+      // DATE/DATETIME을 raw string으로 받아 timezone 변환에 의한 ±1일 오프셋 방지
+      dateStrings: true,
     });
   }
   return pool;
@@ -24,19 +26,26 @@ function getTable(): string {
   return t;
 }
 
-function formatDate(d: Date | null): string {
+function formatDate(d: Date | string | null): string {
   if (!d) return '';
-  return d.toISOString().slice(0, 10);
+  if (typeof d === 'string') return d.slice(0, 10);
+  // dateStrings: true 설정 시 도달하지 않으나, fallback으로 로컬 컴포넌트 사용
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 export async function searchInterpretation(
   query: string,
   구분?: 구분Type,
   limit: number = 10,
+  match: 'and' | 'or' = 'and',
 ): Promise<InterpretationSummary[]> {
   const table = getTable();
-  // 공백으로 분리한 각 어절이 모두 포함된 결과만 반환 (lawquery UI와 동일)
+  // 공백 분리한 각 어절을 AND/OR 조건으로 결합
   const keywords = query.split(/\s+/).filter(k => k.length > 0);
+  if (keywords.length === 0) return [];
   const params: unknown[] = [];
 
   const whereClauses = keywords.map(kw => {
@@ -45,9 +54,10 @@ export async function searchInterpretation(
     return `(제목 LIKE ? OR 질의요지 LIKE ? OR 회답 LIKE ? OR 이유 LIKE ?)`;
   });
 
+  const joiner = match === 'or' ? ' OR ' : ' AND ';
   let sql = `SELECT id, 구분, 분야, 제목, 회신일자, 일련번호
              FROM \`${table}\`
-             WHERE (${whereClauses.join(' AND ')})`;
+             WHERE (${whereClauses.join(joiner)})`;
   if (구분) {
     sql += ' AND 구분 = ?';
     params.push(구분);
