@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import * as api from './api';
+import { useAgentMode } from './AgentModeContext';
 import Stage1Tab from './components/Stage1Tab';
 import Stage2Tab from './components/Stage2Tab';
-import Stage3Tab from './components/Stage3Tab';
 import AdminTab from './components/AdminTab';
 
-type Tab = 'stage1' | 'stage2' | 'stage3' | 'admin';
+type Tab = 'stage1' | 'stage2' | 'admin';
+type BackendStatus = 'online' | 'offline' | 'unknown';
 
 const TAB_STYLE: React.CSSProperties = {
   padding: '10px 24px',
@@ -31,35 +32,33 @@ const DISABLED_TAB_STYLE: React.CSSProperties = {
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('stage1');
-  const [agentMode, setAgentMode] = useState<'mock' | 'live' | 'unknown'>('unknown');
+  const [backend, setBackend] = useState<BackendStatus>('unknown');
+  const { mode, setMode } = useAgentMode();
 
   useEffect(() => {
     let mounted = true;
-
     api.getRuntime()
-      .then(runtime => {
-        if (mounted) setAgentMode(runtime.agentMode);
-      })
-      .catch(() => {
-        if (mounted) setAgentMode('unknown');
-      });
-
-    return () => {
-      mounted = false;
-    };
+      .then(() => { if (mounted) setBackend('online'); })
+      .catch(() => { if (mounted) setBackend('offline'); });
+    return () => { mounted = false; };
   }, []);
 
-  const badgeStyle: React.CSSProperties = {
+  const isMock = mode === 'mock';
+
+  const togglePillStyle: React.CSSProperties = {
     display: 'inline-flex',
     alignItems: 'center',
-    padding: '4px 10px',
+    gap: 8,
+    padding: '4px 12px',
     borderRadius: 999,
     fontSize: 12,
     fontWeight: 700,
     letterSpacing: '0.04em',
     textTransform: 'uppercase',
-    background: agentMode === 'live' ? '#dcfce7' : agentMode === 'mock' ? '#fef3c7' : '#e2e8f0',
-    color: agentMode === 'live' ? '#166534' : agentMode === 'mock' ? '#92400e' : '#475569',
+    cursor: backend === 'offline' ? 'not-allowed' : 'pointer',
+    background: backend === 'offline' ? '#e2e8f0' : isMock ? '#fef3c7' : '#dcfce7',
+    color: backend === 'offline' ? '#475569' : isMock ? '#92400e' : '#166534',
+    border: 'none',
   };
 
   return (
@@ -70,9 +69,25 @@ export default function App() {
           <h1 style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.3px', margin: 0 }}>
             Sentinel — 법령 검토 에이전트
           </h1>
-          <span style={badgeStyle}>
-            {agentMode === 'live' ? 'LIVE' : agentMode === 'mock' ? 'MOCK' : 'BACKEND OFFLINE'}
-          </span>
+          <label
+            style={togglePillStyle}
+            title={
+              backend === 'offline'
+                ? '백엔드 연결 실패'
+                : isMock
+                  ? 'Mock 모드 — 실제 LLM 호출 없이 시뮬레이션'
+                  : 'Live 모드 — 실제 Claude API 호출'
+            }
+          >
+            <input
+              type="checkbox"
+              checked={isMock}
+              disabled={backend === 'offline'}
+              onChange={e => setMode(e.target.checked ? 'mock' : 'live')}
+              style={{ margin: 0, accentColor: '#92400e' }}
+            />
+            {backend === 'offline' ? 'BACKEND OFFLINE' : isMock ? 'MOCK' : 'LIVE'}
+          </label>
         </div>
       </header>
 
@@ -84,9 +99,6 @@ export default function App() {
         <button style={tab === 'stage2' ? ACTIVE_TAB_STYLE : TAB_STYLE} onClick={() => setTab('stage2')}>
           Stage 2 — 보고서 초안
         </button>
-        <button style={tab === 'stage3' ? ACTIVE_TAB_STYLE : TAB_STYLE} onClick={() => setTab('stage3')}>
-          Stage 3 — HWP 편집 준비
-        </button>
         <button style={tab === 'admin' ? ACTIVE_TAB_STYLE : TAB_STYLE} onClick={() => setTab('admin')}>
           Admin — 작업결과 정리
         </button>
@@ -96,7 +108,6 @@ export default function App() {
       <main style={{ flex: 1, padding: '20px 24px', maxWidth: 1100, width: '100%', margin: '0 auto' }}>
         {tab === 'stage1' && <Stage1Tab />}
         {tab === 'stage2' && <Stage2Tab />}
-        {tab === 'stage3' && <Stage3Tab />}
         {tab === 'admin' && <AdminTab />}
       </main>
     </div>

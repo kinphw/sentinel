@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import * as api from '../api';
+import { useAgentMode } from '../AgentModeContext';
 import type { AgentEvent, Artifact, LogEntry } from '../types';
+import { fmtCost } from '../utils';
 import EventLog from './EventLog';
 
 type InputMode = 'new' | 'artifact';
-type Phase = 'idle' | 'running' | 'waiting' | 'confirmed';
+type Phase = 'idle' | 'running' | 'waiting' | 'confirmed' | 'interrupted';
+
+const ACTIVE_SESSION_KEY = 'sentinel.stage1.activeSessionId';
 
 export default function Stage1Tab() {
+  const { mode: agentMode } = useAgentMode();
   const [inputMode, setInputMode] = useState<InputMode>('new');
   const [issueText, setIssueText]   = useState('');
   const [artifacts, setArtifacts]   = useState<Artifact[]>([]);
@@ -15,6 +20,7 @@ export default function Stage1Tab() {
   const [phase, setPhase]           = useState<Phase>('idle');
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [streamText, setStreamText] = useState('');
+  const [awaiting, setAwaiting]     = useState(false);
   const [artifact, setArtifact]     = useState<Artifact | null>(null);
   const [feedbackText, setFeedbackText] = useState('');
   const [showFeedback, setShowFeedback] = useState(false);
@@ -23,10 +29,52 @@ export default function Stage1Tab() {
   const sessionIdRef  = useRef<string | null>(null);
   const esRef         = useRef<EventSource | null>(null);
   const logIdRef      = useRef(0);
+  const streamTextRef = useRef('');
 
   useEffect(() => {
     refreshArtifacts().catch(console.error);
+    restoreSession().catch(console.error);
   }, []);
+
+  async function restoreSession() {
+    const saved = localStorage.getItem(ACTIVE_SESSION_KEY);
+    if (!saved) return;
+
+    try {
+      const { session, artifact: a, running } = await api.getSession(saved);
+      sessionIdRef.current = saved;
+
+      if (['CONFIRMED', 'SUPERSEDED'].includes(session.status)) {
+        localStorage.removeItem(ACTIVE_SESSION_KEY);
+        return;
+      }
+
+      if (running) {
+        setPhase('running');
+        addLog('🔁 진행 중인 세션에 재연결합니다', 'system');
+        esRef.current?.close();
+        esRef.current = api.streamSession(saved, handleEvent);
+        return;
+      }
+
+      if (session.status === 'WAITING_FOR_HUMAN' && a) {
+        setArtifact(a);
+        setPhase('waiting');
+        addLog('🔁 confirm/feedback 대기 중인 세션 복원', 'system');
+        return;
+      }
+
+      if (['READY', 'FAILED'].includes(session.status)) {
+        setPhase('interrupted');
+        addLog('🔁 중단된 세션 복원 — ▶ 재개로 이어서 실행할 수 있습니다', 'system');
+        setStatusMsg('이전 세션이 일시 오류 등으로 중단되었습니다. 원인을 해결한 후 ▶ 재개를 눌러주세요.');
+        return;
+      }
+    } catch {
+      // 세션이 삭제되었거나 조회 실패 — localStorage 정리
+      localStorage.removeItem(ACTIVE_SESSION_KEY);
+    }
+  }
 
   function addLog(text: string, kind: LogEntry['kind']) {
     setLogEntries(prev => [...prev, { id: logIdRef.current++, text, kind }]);
@@ -36,14 +84,23 @@ export default function Stage1Tab() {
     switch (event.type) {
       case 'api_start':
         addLog(`🤔 [API #${event.apiCount}] Claude 추론 중...`, 'info');
+        streamTextRef.current = '';
         setStreamText('');
+        setAwaiting(true);
         break;
       case 'text':
-        setStreamText(prev => prev + event.delta);
+        streamTextRef.current += event.delta;
+        setStreamText(streamTextRef.current);
+        setAwaiting(false);
         break;
-      case 'response_end':
+      case 'response_end': {
+        const finalThought = streamTextRef.current.trim();
+        if (finalThought) addLog(`💭 ${finalThought}`, 'system');
+        streamTextRef.current = '';
         setStreamText('');
+        setAwaiting(false);
         break;
+      }
       case 'tool_call':
         addLog(`🔧 [#${event.seq}] ${event.name}(${event.argsStr})`, 'tool');
         break;
@@ -64,7 +121,7 @@ export default function Stage1Tab() {
         break;
       case 'cost':
         addLog(
-          `💰 API #${event.apiCount}: ${event.inputTokens.toLocaleString()}in / ${event.outputTokens.toLocaleString()}out`,
+          `💰 API #${event.apiCount}: ${event.inputTokens.toLocaleString()}in / ${event.outputTokens.toLocaleString()}out  ${fmtCost(event.inputTokens, event.outputTokens)}`,
           'cost',
         );
         break;
@@ -83,20 +140,47 @@ export default function Stage1Tab() {
         );
         break;
       case 'error':
-        addLog(`❌ 오류: ${event.message}`, 'error');
+        addLog(
+          event.recoverable
+            ? `⚠️ 일시 오류(재개 가능): ${event.message}`
+            : `❌ 오류: ${event.message}`,
+          'error',
+        );
         break;
       case 'done': {
         const total = `${event.totalIn.toLocaleString()}in / ${event.totalOut.toLocaleString()}out`;
-        addLog(`✔ 완료 — API ${event.apiCount}회 | ${total}`, 'cost');
+        addLog(
+          `✔ 종료 — API ${event.apiCount}회 | ${total} | ${fmtCost(event.totalIn, event.totalOut)}`,
+          'cost',
+        );
+        setAwaiting(false);
         esRef.current?.close();
         if (event.finalStatus === 'waiting_for_human') {
           fetchArtifact();
+        } else if (event.finalStatus === 'interrupted') {
+          setPhase('interrupted');
+          setStatusMsg('일시적 오류(잔액·rate limit·네트워크 등)로 중단되었습니다. 원인을 해결한 후 ▶ 재개를 눌러주세요. 대화 이력은 모두 보존되어 있습니다.');
         } else {
           setPhase('idle');
-          setStatusMsg('에이전트가 오류로 종료되었습니다.');
+          setStatusMsg('에이전트가 복구 불가 오류로 종료되었습니다.');
+          localStorage.removeItem(ACTIVE_SESSION_KEY);
         }
         break;
       }
+    }
+  }
+
+  async function handleResume() {
+    if (!sessionIdRef.current) return;
+    setPhase('running');
+    setStatusMsg('');
+    try {
+      await api.resumeSession(sessionIdRef.current);
+      esRef.current?.close();
+      esRef.current = api.streamSession(sessionIdRef.current, handleEvent);
+    } catch (e) {
+      addLog(`❌ 재개 실패: ${(e as Error).message}`, 'error');
+      setPhase('interrupted');
     }
   }
 
@@ -131,7 +215,7 @@ export default function Stage1Tab() {
           return;
         }
         const { id: issueId } = await api.createIssue(issueText);
-        ({ id: sessionId } = await api.createSession({ issueId, stage: 'STAGE_1' }));
+        ({ id: sessionId } = await api.createSession({ issueId, stage: 'STAGE_1', agentMode }));
       } else {
         if (!selectedArtifactId) {
           setPhase('idle');
@@ -149,12 +233,14 @@ export default function Stage1Tab() {
         } = await api.createSession({
           issueId: selected.issue_id,
           stage: 'STAGE_1',
+          agentMode,
           inputArtifactId: selectedArtifactId,
           developmentNote: developmentNote.trim() || undefined,
         }));
       }
 
       sessionIdRef.current = sessionId;
+      localStorage.setItem(ACTIVE_SESSION_KEY, sessionId);
 
       esRef.current?.close();
       esRef.current = api.streamSession(sessionId, handleEvent);
@@ -167,6 +253,7 @@ export default function Stage1Tab() {
   async function handleConfirm() {
     if (!sessionIdRef.current || !artifact) return;
     await api.confirmSession(sessionIdRef.current, artifact.id);
+    localStorage.removeItem(ACTIVE_SESSION_KEY);
     setPhase('confirmed');
     setStatusMsg(`✅ 확정 완료 — Artifact ID: ${artifact.id}`);
     await refreshArtifacts();
@@ -273,7 +360,20 @@ export default function Stage1Tab() {
       </div>
 
       {/* 이벤트 로그 */}
-      <EventLog entries={logEntries} streamText={streamText} />
+      <EventLog entries={logEntries} streamText={streamText} awaiting={awaiting} />
+
+      {/* 재개 버튼 — 일시적 오류로 중단된 경우 */}
+      {phase === 'interrupted' && (
+        <div style={{ background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: 8, padding: 14, display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div style={{ flex: 1, fontSize: 13, color: '#78350f' }}>
+            대화 이력이 DB에 저장되어 있어 같은 지점에서 이어서 실행할 수 있습니다.
+          </div>
+          <button
+            onClick={handleResume}
+            style={{ background: '#2563eb', color: '#fff', padding: '8px 18px', whiteSpace: 'nowrap' }}
+          >▶ 재개</button>
+        </div>
+      )}
 
       {/* 초안 표시 */}
       {artifact && (

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { LogEntry } from '../types';
 
 const KIND_COLOR: Record<LogEntry['kind'], string> = {
@@ -13,16 +13,26 @@ const KIND_COLOR: Record<LogEntry['kind'], string> = {
 interface Props {
   entries: LogEntry[];
   streamText: string;
+  awaiting?: boolean;
 }
 
-export default function EventLog({ entries, streamText }: Props) {
+export default function EventLog({ entries, streamText, awaiting }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [dots, setDots] = useState('');
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [entries, streamText]);
+  }, [entries, streamText, awaiting, dots]);
 
-  if (entries.length === 0 && !streamText) return null;
+  useEffect(() => {
+    if (!awaiting) { setDots(''); return; }
+    const id = setInterval(() => {
+      setDots(prev => prev.length >= 6 ? '' : prev + '.');
+    }, 400);
+    return () => clearInterval(id);
+  }, [awaiting]);
+
+  if (entries.length === 0 && !streamText && !awaiting) return null;
 
   return (
     <div style={{
@@ -43,8 +53,21 @@ export default function EventLog({ entries, streamText }: Props) {
         </div>
       ))}
       {streamText && (
-        <div style={{ color: '#f8fafc', whiteSpace: 'pre-wrap', marginTop: 4 }}>
-          {streamText}
+        <div style={{
+          color: '#cbd5e1',
+          whiteSpace: 'pre-wrap',
+          marginTop: 4,
+          padding: '6px 8px',
+          background: '#1e293b',
+          borderLeft: '2px solid #64748b',
+          borderRadius: 3,
+        }}>
+          <span style={{ color: '#94a3b8' }}>💭 </span>{streamText}
+        </div>
+      )}
+      {awaiting && !streamText && (
+        <div style={{ color: '#94a3b8', marginTop: 4 }}>
+          ⌛ 응답 대기 중{dots}
         </div>
       )}
       <div ref={bottomRef} />

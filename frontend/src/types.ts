@@ -7,8 +7,8 @@ export type AgentEvent =
   | { type: 'submit' }
   | { type: 'artifact'; artifactId: string; version: number; summary: string }
   | { type: 'cost'; apiCount: number; inputTokens: number; outputTokens: number; totalIn: number; totalOut: number }
-  | { type: 'done'; finalStatus: 'waiting_for_human' | 'failed'; apiCount: number; totalIn: number; totalOut: number }
-  | { type: 'error'; message: string }
+  | { type: 'done'; finalStatus: 'waiting_for_human' | 'failed' | 'interrupted'; apiCount: number; totalIn: number; totalOut: number }
+  | { type: 'error'; message: string; recoverable: boolean }
   | { type: 'rate_limit'; waitSec: number; attempt: number }
   | { type: 'compaction'; before: number; after: number }
   | { type: 'force_stop'; reason: 'consecutive_errors' | 'max_tool_calls' };
@@ -28,8 +28,9 @@ export interface Artifact {
 export interface StageSession {
   id: string;
   issue_id: string;
-  stage: 'STAGE_1' | 'STAGE_2' | 'STAGE_3';
+  stage: 'STAGE_1' | 'STAGE_2';
   status: 'READY' | 'RUNNING' | 'WAITING_FOR_HUMAN' | 'CONFIRMED' | 'SUPERSEDED' | 'FAILED';
+  agent_mode: 'live' | 'mock';
   latest_artifact_id: string | null;
   confirmed_artifact_id: string | null;
   retry_count: number;
@@ -45,13 +46,13 @@ export interface AdminIssueSummary {
   id: string;
   input_text: string;
   status: 'OPEN' | 'IN_PROGRESS' | 'WAITING_CONFIRM' | 'COMPLETED' | 'FAILED';
-  current_stage: 'STAGE_1' | 'STAGE_2' | 'STAGE_3' | null;
+  current_stage: 'STAGE_1' | 'STAGE_2' | null;
   created_at: string;
   updated_at: string;
   session_count: number;
   artifact_count: number;
   confirmed_artifact_count: number;
-  latest_stage: 'STAGE_1' | 'STAGE_2' | 'STAGE_3' | null;
+  latest_stage: 'STAGE_1' | 'STAGE_2' | null;
   latest_artifact_summary: string | null;
   latest_artifact_created_at: string | null;
   is_mock: boolean;
@@ -70,7 +71,7 @@ export interface AdminIssueDetail {
     id: string;
     input_text: string;
     status: 'OPEN' | 'IN_PROGRESS' | 'WAITING_CONFIRM' | 'COMPLETED' | 'FAILED';
-    current_stage: 'STAGE_1' | 'STAGE_2' | 'STAGE_3' | null;
+    current_stage: 'STAGE_1' | 'STAGE_2' | null;
     created_at: string;
     updated_at: string;
     is_mock: boolean;

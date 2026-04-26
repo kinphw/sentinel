@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import * as api from '../api';
 import type { AdminIssueDetail, AdminIssueSummary } from '../types';
 
-type StageFilter = '' | 'STAGE_1' | 'STAGE_2' | 'STAGE_3';
+type StageFilter = '' | 'STAGE_1' | 'STAGE_2';
 
 const cardStyle: React.CSSProperties = {
   background: '#fff',
@@ -23,7 +23,6 @@ function shorten(value: string, max = 180): string {
 function stageLabel(stage: string | null | undefined): string {
   if (stage === 'STAGE_1') return 'Stage 1';
   if (stage === 'STAGE_2') return 'Stage 2';
-  if (stage === 'STAGE_3') return 'Stage 3';
   return '-';
 }
 
@@ -39,6 +38,7 @@ export default function AdminTab() {
   const [statusMsg, setStatusMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [resumingId, setResumingId] = useState<string | null>(null);
 
   useEffect(() => {
     refreshList().catch(console.error);
@@ -84,6 +84,29 @@ export default function AdminTab() {
       setDetail(null);
     } finally {
       setLoadingDetail(false);
+    }
+  }
+
+  async function handleResume(session: { id: string; stage: 'STAGE_1' | 'STAGE_2'; status: string }) {
+    setResumingId(session.id);
+    setStatusMsg('');
+    setErrorMsg('');
+
+    try {
+      await api.resumeSession(session.id);
+      const lsKey = session.stage === 'STAGE_1'
+        ? 'sentinel.stage1.activeSessionId'
+        : 'sentinel.stage2.activeSessionId';
+      localStorage.setItem(lsKey, session.id);
+      const stageName = session.stage === 'STAGE_1' ? 'Stage 1' : 'Stage 2';
+      setStatusMsg(
+        `세션을 재개했습니다. ${stageName} 탭으로 이동하면 진행 상황이 자동으로 표시됩니다.`,
+      );
+      if (selectedId) await loadDetail(selectedId);
+    } catch (error) {
+      setErrorMsg(`재개 실패: ${(error as Error).message}`);
+    } finally {
+      setResumingId(null);
     }
   }
 
@@ -139,7 +162,6 @@ export default function AdminTab() {
             <option value="">전체</option>
             <option value="STAGE_1">Stage 1</option>
             <option value="STAGE_2">Stage 2</option>
-            <option value="STAGE_3">Stage 3</option>
           </select>
         </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, paddingBottom: 8 }}>
@@ -262,6 +284,23 @@ export default function AdminTab() {
                       <span style={{ fontSize: 11, fontWeight: 700, color: '#334155', background: '#e2e8f0', padding: '2px 8px', borderRadius: 999 }}>
                         {session.status}
                       </span>
+                      {(session.status === 'FAILED' || session.status === 'READY') && session.message_count > 0 && (
+                        <button
+                          onClick={() => handleResume({ id: session.id, stage: session.stage, status: session.status }).catch(console.error)}
+                          disabled={resumingId === session.id}
+                          style={{
+                            background: resumingId === session.id ? '#94a3b8' : '#2563eb',
+                            color: '#fff',
+                            fontSize: 11,
+                            fontWeight: 700,
+                            padding: '3px 10px',
+                            borderRadius: 999,
+                            cursor: resumingId === session.id ? 'default' : 'pointer',
+                          }}
+                        >
+                          {resumingId === session.id ? '재개 중...' : '▶ 재개'}
+                        </button>
+                      )}
                     </div>
                     <span style={{ fontSize: 12, color: '#64748b' }}>
                       runs {session.run_count} | messages {session.message_count} | feedbacks {session.feedbacks.length}

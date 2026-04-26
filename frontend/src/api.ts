@@ -35,18 +35,19 @@ export function createIssue(inputText: string) {
 }
 
 export function getRuntime() {
-  return get<{ agentMode: 'mock' | 'live'; port: number }>('/runtime');
+  return get<{ port: number }>('/runtime');
 }
 
 export function createSession(params: {
   issueId?: string;
-  stage: 'STAGE_1' | 'STAGE_2' | 'STAGE_3';
+  stage: 'STAGE_1' | 'STAGE_2';
+  agentMode: 'live' | 'mock';
   inputArtifactId?: string;
   manualInput?: string;
   customToc?: string;
   developmentNote?: string;
 }) {
-  return post<{ id: string; issueId: string }>('/sessions', params);
+  return post<{ id: string; issueId: string; agentMode: 'live' | 'mock' }>('/sessions', params);
 }
 
 export function getSession(sessionId: string) {
@@ -61,6 +62,10 @@ export function confirmSession(sessionId: string, artifactId: string) {
 
 export function submitFeedback(sessionId: string, text: string, customToc?: string) {
   return post<{ ok: boolean }>(`/sessions/${sessionId}/feedback`, { text, customToc });
+}
+
+export function resumeSession(sessionId: string) {
+  return post<{ ok: boolean }>(`/sessions/${sessionId}/resume`, {});
 }
 
 export function getArtifacts(params: { stage?: string; status?: string; issueId?: string } = {}) {
