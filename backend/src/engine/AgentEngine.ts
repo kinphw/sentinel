@@ -25,7 +25,10 @@ const CONTEXT_SUMMARY_CHARS = parsePositiveInt(
   process.env.SENTINEL_CONTEXT_SUMMARY_CHARS,
   DEFAULT_CONTEXT_SUMMARY_CHARS,
 );
-const TEMPERATURE = parseNumberInRange(process.env.SENTINEL_TEMPERATURE, 0, 0, 1);
+// Opus 4.7+에서 temperature는 deprecated. 환경변수가 명시된 경우에만 전달한다.
+const TEMPERATURE = process.env.SENTINEL_TEMPERATURE !== undefined
+  ? parseNumberInRange(process.env.SENTINEL_TEMPERATURE, 0, 0, 1)
+  : undefined;
 
 // ── AgentEvent ────────────────────────────────────────────────
 
@@ -673,7 +676,7 @@ export class AgentEngine {
               system: useCache ? withSystemCache(activeSystemPrompt) : activeSystemPrompt,
               messages: useCache ? withMessagesCache(requestMessages) : requestMessages,
               tools: useCache ? withToolsCache(allTools) : allTools,
-              temperature: TEMPERATURE,
+              ...(TEMPERATURE !== undefined ? { temperature: TEMPERATURE } : {}),
             });
 
             stream.on('text', (text) => {
