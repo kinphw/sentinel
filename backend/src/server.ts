@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import { SessionStore } from './store/SessionStore.js';
 import { ToolGateway } from './engine/ToolGateway.js';
-import { AgentEngine, STAGE2_SYSTEM_PROMPT, STAGE3_SYSTEM_PROMPT } from './engine/AgentEngine.js';
+import { AgentEngine, buildStage2SystemPrompt } from './engine/AgentEngine.js';
 import type { AgentEvent } from './engine/AgentEngine.js';
 import { closePool } from './db/connection.js';
 
@@ -14,7 +14,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: resolve(__dirname, '../../.env') });
 
 const PORT = parseInt(process.env.PORT ?? '3101', 10);
-const AGENT_MODE = process.env.SENTINEL_AGENT_MODE?.trim().toLowerCase() === 'mock' ? 'mock' : 'live';
 
 // ── 의존성 초기화 ─────────────────────────────────────────────
 
@@ -59,12 +58,7 @@ async function startAgent(
     }
 
     if (stage === 'STAGE_2') {
-      systemPrompt = opts.customToc
-        ? buildCustomTocPrompt(opts.customToc)
-        : STAGE2_SYSTEM_PROMPT;
-      useMcpTools = false;
-    } else if (stage === 'STAGE_3') {
-      systemPrompt = STAGE3_SYSTEM_PROMPT;
+      systemPrompt = buildStage2SystemPrompt(opts.customToc);
       useMcpTools = false;
     }
 
@@ -85,13 +79,6 @@ async function startAgent(
   } finally {
     runningSession.delete(sessionId);
   }
-}
-
-function buildCustomTocPrompt(customToc: string): string {
-  return STAGE2_SYSTEM_PROMPT.replace(
-    '사용자가 별도 목차를 제시한 경우, 아래 기본 구조 대신 제시된 목차를 우선 적용합니다.',
-    '사용자가 다음 목차를 제시하였으므로, 기본 구조 대신 이 목차를 적용합니다:\n\n' + customToc,
-  );
 }
 
 function buildInitialInput(
@@ -134,19 +121,6 @@ function buildInitialInput(
     return undefined;
   }
 
-  if (stage === 'STAGE_3') {
-    if (!opts.sourceArtifact) return undefined;
-    const hasEditedInput = Boolean(opts.manualInput?.trim());
-    const sourceText = opts.manualInput?.trim() || opts.sourceArtifact.content;
-    const label = opts.sourceArtifact.session_stage === 'STAGE_3'
-      ? hasEditedInput ? '사용자 수정본 편집본' : '기존 편집본'
-      : hasEditedInput ? '사용자 수정본 보고서 초안' : '보고서 초안';
-    return (
-      `[${label}]\n${sourceText}` +
-      `${noteSection}\n\n위 문서를 바탕으로 내용의 결론은 유지한 채 편집용 새 초안을 작성해주세요.`
-    );
-  }
-
   return undefined;
 }
 
@@ -167,7 +141,6 @@ if (existsSync(frontendDist)) {
 // GET /api/runtime
 app.get('/api/runtime', (_req, res) => {
   res.json({
-    agentMode: AGENT_MODE,
     port: PORT,
   });
 });
@@ -188,13 +161,15 @@ app.post('/api/sessions', async (req, res) => {
     const {
       issueId,
       stage,
+      agentMode,
       inputArtifactId,
       manualInput,
       customToc,
       developmentNote,
     } = req.body as {
       issueId?: string;
-      stage: 'STAGE_1' | 'STAGE_2' | 'STAGE_3';
+      stage: 'STAGE_1' | 'STAGE_2';
+      agentMode?: 'live' | 'mock';
       inputArtifactId?: string;
       manualInput?: string;
       customToc?: string;
@@ -202,6 +177,8 @@ app.post('/api/sessions', async (req, res) => {
     };
 
     if (!stage) { res.status(400).json({ error: 'stage required' }); return; }
+
+    const mode: 'live' | 'mock' = agentMode === 'mock' ? 'mock' : 'live';
 
     let actualIssueId = issueId;
 
@@ -218,8 +195,8 @@ app.post('/api/sessions', async (req, res) => {
 
     if (!actualIssueId) { res.status(400).json({ error: 'issueId or manualInput required' }); return; }
 
-    const session = await store.createStageSession(actualIssueId, stage, inputArtifactId);
-    res.json({ id: session.id, issueId: actualIssueId });
+    const session = await store.createStageSession(actualIssueId, stage, mode, inputArtifactId);
+    res.json({ id: session.id, issueId: actualIssueId, agentMode: mode });
 
     // 에이전트 비동기 실행
     startAgent(session.id, stage, { inputArtifactId, manualInput, customToc, developmentNote }).catch(console.error);
@@ -261,6 +238,34 @@ app.post('/api/sessions/:id/confirm', async (req, res) => {
     if (!artifactId) { res.status(400).json({ error: 'artifactId required' }); return; }
     await store.confirmArtifact(req.params.id, artifactId);
     res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: (e as Error).message }); }
+});
+
+// POST /api/sessions/:id/resume — 일시적 오류로 중단된 세션 재개
+app.post('/api/sessions/:id/resume', async (req, res) => {
+  try {
+    const sessionId = req.params.id;
+    const session = await store.getStageSession(sessionId);
+
+    // READY: recoverable 오류로 자동 복구된 상태 / FAILED: 사용자가 명시적으로 재개 시도
+    if (!['READY', 'FAILED'].includes(session.status)) {
+      res.status(409).json({ error: `세션 상태가 재개 불가: ${session.status}` });
+      return;
+    }
+
+    if (runningSession.has(sessionId)) {
+      res.status(409).json({ error: '이미 실행 중인 세션입니다.' });
+      return;
+    }
+
+    if (session.status === 'FAILED') {
+      await store.updateSessionStatus(sessionId, 'READY');
+    }
+
+    res.json({ ok: true });
+
+    // feedback 없이 기존 messages 그대로 이어서 실행
+    startAgent(sessionId, session.stage).catch(console.error);
   } catch (e) { res.status(500).json({ error: (e as Error).message }); }
 });
 
@@ -337,23 +342,32 @@ if (existsSync(frontendDist)) {
 // ── 서버 시작 ─────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  if (AGENT_MODE === 'live' && !process.env.ANTHROPIC_API_KEY) {
-    console.error('[오류] ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.');
-    process.exit(1);
+  if (!process.env.ANTHROPIC_API_KEY) {
+    console.warn('[경고] ANTHROPIC_API_KEY 미설정 — live 모드 세션은 실패합니다 (mock 모드는 동작).');
   }
 
   await gateway.connect();
-  console.log(`[ToolGateway] MCP 서버 연결 완료 (${AGENT_MODE} mode)`);
+  console.log('[ToolGateway] MCP 서버 연결 완료');
 
   app.listen(PORT, () => {
     console.log(`[Sentinel API] http://localhost:${PORT}`);
   });
 
-  process.on('SIGINT', async () => {
-    await gateway.disconnect();
-    await closePool();
-    process.exit(0);
-  });
+  let shuttingDown = false;
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`[Sentinel API] ${signal} 수신 — graceful shutdown`);
+    try {
+      await gateway.disconnect();
+      await closePool();
+    } finally {
+      process.exit(0);
+    }
+  };
+
+  process.on('SIGINT',  () => { void shutdown('SIGINT'); });
+  process.on('SIGTERM', () => { void shutdown('SIGTERM'); });
 }
 
 main().catch(e => { console.error(e); process.exit(1); });

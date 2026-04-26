@@ -1,13 +1,14 @@
 import type Anthropic from '@anthropic-ai/sdk';
 
 export type IssueStatus    = 'OPEN' | 'IN_PROGRESS' | 'WAITING_CONFIRM' | 'COMPLETED' | 'FAILED';
-export type Stage          = 'STAGE_1' | 'STAGE_2' | 'STAGE_3';
+export type Stage          = 'STAGE_1' | 'STAGE_2';
 export type SessionStatus  = 'READY' | 'RUNNING' | 'WAITING_FOR_HUMAN' | 'CONFIRMED' | 'SUPERSEDED' | 'FAILED';
 export type RunStatus      = 'QUEUED' | 'RUNNING' | 'PAUSED_FOR_TOOL' | 'PAUSED_FOR_HUMAN' | 'COMPLETED' | 'FAILED';
 export type StopReason     = 'tool' | 'human' | 'completed' | 'error';
 export type ArtifactStatus = 'draft' | 'confirmed' | 'superseded';
 export type AuthorType     = 'user' | 'reviewer';
 export type MessageRole    = 'system' | 'user' | 'assistant';
+export type AgentMode      = 'live' | 'mock';
 
 export interface Issue {
   id: string;
@@ -23,6 +24,7 @@ export interface StageSession {
   issue_id: string;
   stage: Stage;
   status: SessionStatus;
+  agent_mode: AgentMode;
   input_artifact_id: string | null;
   latest_artifact_id: string | null;
   confirmed_artifact_id: string | null;

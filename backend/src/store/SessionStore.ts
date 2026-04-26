@@ -6,6 +6,7 @@ import type {
   StageSession, SessionStatus,
   AgentRun, RunStatus, StopReason,
   Artifact, Feedback, AuthorType,
+  AgentMode,
 } from '../models/types.js';
 
 function newId(): string {
@@ -14,11 +15,6 @@ function newId(): string {
 
 export class SessionStore {
   private get pool(): mysql.Pool { return getPool(); }
-
-  private isLikelyMockText(value: string | null | undefined): boolean {
-    if (!value) return false;
-    return value.toLowerCase().includes('[mock]');
-  }
 
   // ─── Issue ────────────────────────────────────────────────
 
@@ -52,11 +48,16 @@ export class SessionStore {
 
   // ─── StageSession ─────────────────────────────────────────
 
-  async createStageSession(issueId: string, stage: Stage, inputArtifactId?: string): Promise<StageSession> {
+  async createStageSession(
+    issueId: string,
+    stage: Stage,
+    agentMode: AgentMode,
+    inputArtifactId?: string,
+  ): Promise<StageSession> {
     const id = newId();
     await this.pool.query(
-      'INSERT INTO stage_sessions (id, issue_id, stage, input_artifact_id) VALUES (?, ?, ?, ?)',
-      [id, issueId, stage, inputArtifactId ?? null],
+      'INSERT INTO stage_sessions (id, issue_id, stage, agent_mode, input_artifact_id) VALUES (?, ?, ?, ?, ?)',
+      [id, issueId, stage, agentMode, inputArtifactId ?? null],
     );
     return this.getStageSession(id);
   }
@@ -291,16 +292,9 @@ export class SessionStore {
     }
 
     if (params.onlyMock) {
-      conditions.push(`(
-        i.input_text LIKE '%[mock]%'
-        OR EXISTS (
-          SELECT 1
-          FROM stage_sessions ssm
-          JOIN artifacts am ON am.stage_session_id = ssm.id
-          WHERE ssm.issue_id = i.id
-            AND (am.summary LIKE '%[mock]%' OR am.content LIKE '%[mock]%')
-        )
-      )`);
+      conditions.push(
+        `EXISTS (SELECT 1 FROM stage_sessions ssm WHERE ssm.issue_id = i.id AND ssm.agent_mode = 'mock')`,
+      );
     }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -310,6 +304,7 @@ export class SessionStore {
          COUNT(DISTINCT ss.id) AS session_count,
          COUNT(a.id) AS artifact_count,
          SUM(CASE WHEN a.status = 'confirmed' THEN 1 ELSE 0 END) AS confirmed_artifact_count,
+         MAX(CASE WHEN ss.agent_mode = 'mock' THEN 1 ELSE 0 END) AS has_mock_session,
          latest.stage AS latest_stage,
          latest.summary AS latest_artifact_summary,
          latest.created_at AS latest_artifact_created_at
@@ -353,8 +348,7 @@ export class SessionStore {
         latest_artifact_summary: string | null;
         latest_artifact_created_at: Date | null;
       }),
-      is_mock: this.isLikelyMockText(row.input_text as string)
-        || this.isLikelyMockText(row.latest_artifact_summary as string | null),
+      is_mock: Number(row.has_mock_session ?? 0) > 0,
     }));
   }
 
@@ -402,10 +396,7 @@ export class SessionStore {
       };
     }));
 
-    const isMock = this.isLikelyMockText(issue.input_text)
-      || sessions.some(session => session.artifacts.some(artifact =>
-        this.isLikelyMockText(artifact.summary) || this.isLikelyMockText(artifact.content),
-      ));
+    const isMock = sessions.some(session => session.agent_mode === 'mock');
 
     return {
       issue: { ...issue, is_mock: isMock },

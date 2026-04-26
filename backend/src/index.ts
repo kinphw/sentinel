@@ -129,7 +129,7 @@ async function main(): Promise<void> {
 
     const inputText = await rl.question('이슈 내용: ');
     const issue  = await store.createIssue(inputText);
-    const stage1 = await store.createStageSession(issue.id, 'STAGE_1');
+    const stage1 = await store.createStageSession(issue.id, 'STAGE_1', 'live');
     console.log(`\n[이슈 생성] ${issue.id}`);
     console.log(`[STAGE 1 세션] ${stage1.id}\n`);
 
@@ -165,7 +165,7 @@ async function main(): Promise<void> {
       stage2InputText = `[검토 결론]\n${confirmedArtifact.content}`;
     }
 
-    const stage2 = await store.createStageSession(issue.id, 'STAGE_2', confirmedArtifactId);
+    const stage2 = await store.createStageSession(issue.id, 'STAGE_2', 'live', confirmedArtifactId);
     console.log(`\n[STAGE 2 세션] ${stage2.id}\n`);
 
     await runStageLoop(rl, store, engine, stage2.id, 'STAGE 2: 보고서 초안', {

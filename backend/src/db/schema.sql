@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS issues (
   input_text    LONGTEXT     NOT NULL,
   status        ENUM('OPEN','IN_PROGRESS','WAITING_CONFIRM','COMPLETED','FAILED')
                 NOT NULL DEFAULT 'OPEN',
-  current_stage ENUM('STAGE_1','STAGE_2','STAGE_3') NULL,
+  current_stage ENUM('STAGE_1','STAGE_2') NULL,
   created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
@@ -23,9 +23,10 @@ CREATE TABLE IF NOT EXISTS issues (
 CREATE TABLE IF NOT EXISTS stage_sessions (
   id                    VARCHAR(36) NOT NULL PRIMARY KEY,
   issue_id              VARCHAR(36) NOT NULL,
-  stage                 ENUM('STAGE_1','STAGE_2','STAGE_3') NOT NULL,
+  stage                 ENUM('STAGE_1','STAGE_2') NOT NULL,
   status                ENUM('READY','RUNNING','WAITING_FOR_HUMAN','CONFIRMED','SUPERSEDED','FAILED')
                         NOT NULL DEFAULT 'READY',
+  agent_mode            ENUM('live','mock') NOT NULL DEFAULT 'live',
   input_artifact_id     VARCHAR(36) NULL,
   latest_artifact_id    VARCHAR(36) NULL,
   confirmed_artifact_id VARCHAR(36) NULL,
@@ -34,6 +35,7 @@ CREATE TABLE IF NOT EXISTS stage_sessions (
   created_at            DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at            DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_issue (issue_id),
+  INDEX idx_agent_mode (agent_mode),
   FOREIGN KEY (issue_id) REFERENCES issues(id)
 ) ENGINE=InnoDB;
 

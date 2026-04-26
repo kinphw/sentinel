@@ -34,7 +34,7 @@ async function run() {
     issueId = issue.id;
     ok(`Issue 생성: ${issueId}`);
 
-    const session = await store.createStageSession(issueId, 'STAGE_1');
+    const session = await store.createStageSession(issueId, 'STAGE_1', 'live');
     sessionId = session.id;
     ok(`StageSession 생성: ${sessionId}`);
 
