@@ -21,6 +21,7 @@
       "type": "pwa-chrome",
       "request": "launch",
       "url": "http://localhost:5173",
+      "preLaunchTask": "Sentinel: Wait Backend",
       "webRoot": "${workspaceFolder}/frontend/src"
     }
   ],

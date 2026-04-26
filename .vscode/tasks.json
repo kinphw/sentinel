@@ -10,7 +10,24 @@
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "$ports = 5173; $procIds = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -in $ports } | Select-Object -ExpandProperty OwningProcess -Unique; foreach ($procId in $procIds) { Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue }"
+        "$ports = 5173, 3101; $procIds = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -in $ports } | Select-Object -ExpandProperty OwningProcess -Unique; foreach ($procId in $procIds) { Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue }"
+      ],
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "never",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Sentinel: Wait Backend",
+      "type": "process",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$deadline = (Get-Date).AddSeconds(60); do { try { $res = Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:3101/api/runtime' -TimeoutSec 2; if ($res.StatusCode -ge 200 -and $res.StatusCode -lt 500) { exit 0 } } catch { }; Start-Sleep -Milliseconds 500 } while ((Get-Date) -lt $deadline); Write-Error 'Sentinel backend did not become ready on http://localhost:3101/api/runtime'; exit 1"
       ],
       "problemMatcher": [],
       "presentation": {
