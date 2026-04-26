@@ -22,7 +22,12 @@
       "request": "launch",
       "url": "http://localhost:5173",
       "preLaunchTask": "Sentinel: Wait Backend",
-      "webRoot": "${workspaceFolder}/frontend/src"
+      "webRoot": "${workspaceFolder}/frontend/src",
+      "userDataDir": "${workspaceFolder}/.vscode/chrome-debug-profile",
+      "runtimeArgs": [
+        "--no-first-run",
+        "--no-default-browser-check"
+      ]
     }
   ],
   "compounds": [

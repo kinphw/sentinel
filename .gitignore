@@ -9,6 +9,9 @@ dist/
 # Claude Code 설정
 .claude/
 
+# VS Code 디버그용 Chrome 프로필
+.vscode/chrome-debug-profile/
+
 # 빌드 캐시
 *.tsbuildinfo
 

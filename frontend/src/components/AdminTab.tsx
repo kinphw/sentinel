@@ -32,7 +32,7 @@ export default function AdminTab() {
   const [detail, setDetail] = useState<AdminIssueDetail | null>(null);
   const [query, setQuery] = useState('');
   const [stage, setStage] = useState<StageFilter>('');
-  const [onlyMock, setOnlyMock] = useState(true);
+  const [onlyMock, setOnlyMock] = useState(false);
   const [loadingList, setLoadingList] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
@@ -142,7 +142,6 @@ export default function AdminTab() {
         <h2 style={{ fontSize: 16, fontWeight: 700, color: '#1e3a5f', marginBottom: 6 }}>Admin — 작업결과 정리</h2>
         <p style={{ fontSize: 13, lineHeight: 1.7, color: '#475569' }}>
           DB에 적재된 작업 이슈를 조회하고, 선택한 이슈에 연결된 세션·산출물·피드백·메시지를 한 번에 삭제할 수 있습니다.
-          기본값은 mock 결과만 보도록 설정했습니다.
         </p>
       </div>
 
