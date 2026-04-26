@@ -2,36 +2,22 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Sentinel: Attach Backend (Mock)",
+      "name": "Sentinel: Launch Backend",
       "type": "node",
-      "request": "attach",
-      "port": 9229,
-      "cwd": "${workspaceFolder}/backend",
-      "restart": true,
-      "skipFiles": [
-        "<node_internals>/**"
-      ]
-    },
-    {
-      "name": "Sentinel: Attach Backend (Live)",
-      "type": "node",
-      "request": "attach",
-      "port": 9230,
-      "cwd": "${workspaceFolder}/backend",
-      "restart": true,
-      "skipFiles": [
-        "<node_internals>/**"
-      ]
-    },
-    {
-      "name": "Sentinel: Debug Frontend (Mock)",
-      "type": "pwa-chrome",
       "request": "launch",
-      "url": "http://localhost:5174",
-      "webRoot": "${workspaceFolder}/frontend/src"
+      "runtimeArgs": ["--import", "tsx"],
+      "program": "${workspaceFolder}/backend/src/server.ts",
+      "cwd": "${workspaceFolder}/backend",
+      "env": { "PORT": "3101" },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen",
+      "skipFiles": [
+        "<node_internals>/**",
+        "**/node_modules/**"
+      ]
     },
     {
-      "name": "Sentinel: Debug Frontend (Live)",
+      "name": "Sentinel: Debug Frontend",
       "type": "pwa-chrome",
       "request": "launch",
       "url": "http://localhost:5173",
@@ -40,21 +26,13 @@
   ],
   "compounds": [
     {
-      "name": "Sentinel: Full Stack Debug (Mock)",
+      "name": "Sentinel: Full Stack Debug",
       "configurations": [
-        "Sentinel: Attach Backend (Mock)",
-        "Sentinel: Debug Frontend (Mock)"
+        "Sentinel: Launch Backend",
+        "Sentinel: Debug Frontend"
       ],
-      "preLaunchTask": "Sentinel: Stack (Mock)",
-      "stopAll": true
-    },
-    {
-      "name": "Sentinel: Full Stack Debug (Live)",
-      "configurations": [
-        "Sentinel: Attach Backend (Live)",
-        "Sentinel: Debug Frontend (Live)"
-      ],
-      "preLaunchTask": "Sentinel: Stack (Live)",
+      "preLaunchTask": "Sentinel: Stack",
+      "postDebugTask": "Sentinel: Cleanup Ports",
       "stopAll": true
     }
   ]

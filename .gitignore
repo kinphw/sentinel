@@ -11,3 +11,6 @@ dist/
 
 # 빌드 캐시
 *.tsbuildinfo
+
+# hwp api 개발 기초자료
+hwp_api_reference/

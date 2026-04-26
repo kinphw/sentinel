@@ -1,3 +1,4 @@
+// 단일 진입점. mock/live 분기는 프론트엔드 헤더 토글로 세션 단위 결정.
 module.exports = {
   apps: [
     {
@@ -16,11 +17,6 @@ module.exports = {
       env_production: {
         NODE_ENV: 'production',
         PORT: 3101
-      },
-      env_mock: {
-        NODE_ENV: 'development',
-        PORT: 3101,
-        SENTINEL_AGENT_MODE: 'mock'
       }
     }
   ]
