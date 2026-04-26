@@ -13,12 +13,20 @@ dotenv.config({ path: resolve(__dirname, '../../.env') });
 
 const SEP = '─'.repeat(60);
 
-const PRICE_INPUT  = 3.0;
-const PRICE_OUTPUT = 15.0;
+// Opus 4.7 단가 (per 1M tokens, USD)
+const PRICE_INPUT  = 15.0;
+const PRICE_OUTPUT = 75.0;
 const KRW_PER_USD  = 1400;
 
-function fmtCost(inTok: number, outTok: number): string {
-  const usd = (inTok / 1_000_000) * PRICE_INPUT + (outTok / 1_000_000) * PRICE_OUTPUT;
+const PRICE_CACHE_WRITE = 18.75;  // 25% premium over input
+const PRICE_CACHE_READ  = 1.50;   // 90% discount on input
+
+function fmtCost(inTok: number, outTok: number, cacheRead: number = 0, cacheWrite: number = 0): string {
+  const usd =
+    (inTok      / 1_000_000) * PRICE_INPUT +
+    (outTok     / 1_000_000) * PRICE_OUTPUT +
+    (cacheWrite / 1_000_000) * PRICE_CACHE_WRITE +
+    (cacheRead  / 1_000_000) * PRICE_CACHE_READ;
   return `$${usd.toFixed(5)} (₩${Math.round(usd * KRW_PER_USD).toLocaleString()})`;
 }
 
@@ -57,13 +65,18 @@ function makeConsoleHandler(): (event: AgentEvent) => void {
         console.log('  ─────────────────────────────────────────');
         break;
 
-      case 'cost':
+      case 'cost': {
+        const cacheStr = event.cacheReadTokens > 0 || event.cacheCreationTokens > 0
+          ? `  [📦 cache: ${event.cacheReadTokens.toLocaleString()} read / ${event.cacheCreationTokens.toLocaleString()} write]`
+          : '';
         console.log(
           `  📊 [API #${event.apiCount}] ` +
           `${event.inputTokens.toLocaleString()}in / ${event.outputTokens.toLocaleString()}out  ` +
-          fmtCost(event.inputTokens, event.outputTokens),
+          fmtCost(event.inputTokens, event.outputTokens, event.cacheReadTokens, event.cacheCreationTokens) +
+          cacheStr,
         );
         break;
+      }
 
       case 'tool_call':
         console.log(`\n  🔧 [도구 #${event.seq}] ${event.name}(${event.argsStr})`);
@@ -101,13 +114,17 @@ function makeConsoleHandler(): (event: AgentEvent) => void {
         console.error(`\n  ❌ 오류: ${event.message}`);
         break;
 
-      case 'done':
+      case 'done': {
+        const cacheSummary = event.totalCacheRead > 0 || event.totalCacheCreation > 0
+          ? ` | 📦 ${event.totalCacheRead.toLocaleString()} cached read / ${event.totalCacheCreation.toLocaleString()} write`
+          : '';
         console.log(
           `\n  ══ 실행 완료 | API ${event.apiCount}회 | ` +
-          `${event.totalIn.toLocaleString()}in / ${event.totalOut.toLocaleString()}out | ` +
-          `${fmtCost(event.totalIn, event.totalOut)} ══`,
+          `${event.totalIn.toLocaleString()}in / ${event.totalOut.toLocaleString()}out${cacheSummary} | ` +
+          `${fmtCost(event.totalIn, event.totalOut, event.totalCacheRead, event.totalCacheCreation)} ══`,
         );
         break;
+      }
     }
   };
 }
@@ -172,6 +189,7 @@ async function main(): Promise<void> {
       useMcpTools: false,
       systemPrompt: STAGE2_SYSTEM_PROMPT,
       initialInputOverride: stage2InputText,
+      enablePromptCache: false, // Stage 2는 단발 응답이라 캐시하면 손해
     });
 
   } finally {
@@ -187,6 +205,7 @@ interface LoopConfig {
   useMcpTools?: boolean;
   systemPrompt?: string;
   initialInputOverride?: string;
+  enablePromptCache?: boolean;
 }
 
 async function runStageLoop(
@@ -210,6 +229,7 @@ async function runStageLoop(
       useMcpTools: config.useMcpTools,
       systemPrompt: config.systemPrompt,
       initialInputOverride: overrideForThisRun,
+      enablePromptCache: config.enablePromptCache,
       onEvent: makeConsoleHandler(),
     });
     currentFeedback = undefined;

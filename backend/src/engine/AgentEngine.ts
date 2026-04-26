@@ -3,7 +3,7 @@ import type { SessionStore } from '../store/SessionStore.js';
 import type { ToolGateway } from './ToolGateway.js';
 import type { Artifact, Stage, StageSession } from '../models/types.js';
 
-const MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4-6';
+const MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-opus-4-7';
 const MOCK_DELAY_MS = parsePositiveInt(process.env.SENTINEL_MOCK_DELAY_MS, 120);
 const DEFAULT_MAX_TOOL_CALLS = 60;
 const MAX_TOOL_CALLS = parsePositiveInt(process.env.SENTINEL_MAX_TOOL_CALLS, DEFAULT_MAX_TOOL_CALLS);
@@ -37,8 +37,8 @@ export type AgentEvent =
   | { type: 'tool_result'; seq: number; isError: boolean; preview: string }
   | { type: 'submit' }
   | { type: 'artifact'; artifactId: string; version: number; summary: string }
-  | { type: 'cost'; apiCount: number; inputTokens: number; outputTokens: number; totalIn: number; totalOut: number }
-  | { type: 'done'; finalStatus: 'waiting_for_human' | 'failed' | 'interrupted'; apiCount: number; totalIn: number; totalOut: number }
+  | { type: 'cost'; apiCount: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; totalIn: number; totalOut: number }
+  | { type: 'done'; finalStatus: 'waiting_for_human' | 'failed' | 'interrupted'; apiCount: number; totalIn: number; totalOut: number; totalCacheRead: number; totalCacheCreation: number }
   | { type: 'error'; message: string; recoverable: boolean }
   | { type: 'rate_limit'; waitSec: number; attempt: number }
   | { type: 'compaction'; before: number; after: number }
@@ -457,6 +457,50 @@ async function sleep(ms: number): Promise<void> {
   await new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// ── Prompt Caching 헬퍼 ──────────────────────────────────────
+// Anthropic의 ephemeral cache는 prefix를 5분간 보관하고 cache hit 시
+// 입력 단가를 90% 할인합니다. system / tools / 누적 messages 끝에
+// breakpoint를 두면 매 turn마다 가장 긴 일치 prefix가 캐시 적중합니다.
+
+const CACHE_CONTROL = { type: 'ephemeral' as const };
+
+function withSystemCache(systemPrompt: string): Anthropic.TextBlockParam[] {
+  return [{ type: 'text', text: systemPrompt, cache_control: CACHE_CONTROL }];
+}
+
+function withToolsCache(tools: Anthropic.Tool[]): Anthropic.Tool[] {
+  if (tools.length === 0) return tools;
+  const last = tools[tools.length - 1];
+  return [
+    ...tools.slice(0, -1),
+    { ...last, cache_control: CACHE_CONTROL },
+  ];
+}
+
+function withMessagesCache(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+  if (messages.length === 0) return messages;
+  const lastIdx = messages.length - 1;
+  const last = messages[lastIdx];
+
+  let newContent: Anthropic.ContentBlockParam[];
+  if (typeof last.content === 'string') {
+    newContent = [{ type: 'text', text: last.content, cache_control: CACHE_CONTROL }];
+  } else {
+    newContent = [...last.content];
+    const lastBlockIdx = newContent.length - 1;
+    if (lastBlockIdx < 0) return messages;
+    newContent[lastBlockIdx] = {
+      ...newContent[lastBlockIdx],
+      cache_control: CACHE_CONTROL,
+    } as Anthropic.ContentBlockParam;
+  }
+
+  return [
+    ...messages.slice(0, lastIdx),
+    { ...last, content: newContent },
+  ];
+}
+
 // ── RunConfig ────────────────────────────────────────────────
 
 export interface RunConfig {
@@ -464,6 +508,12 @@ export interface RunConfig {
   systemPrompt?: string;
   initialInputOverride?: string;
   onEvent?: (event: AgentEvent) => void;
+  /**
+   * Anthropic ephemeral prompt caching 사용 여부 (default true).
+   * Stage 2처럼 단발 호출로 끝나는 세션은 false로 — cache write의 25% premium만
+   * 부담하고 read benefit이 없으므로 손해.
+   */
+  enablePromptCache?: boolean;
 }
 
 export class AgentEngine {
@@ -490,6 +540,8 @@ export class AgentEngine {
 
     let totalIn  = 0;
     let totalOut = 0;
+    let totalCacheRead = 0;
+    let totalCacheCreation = 0;
     let apiCount = 0;
 
     let messages: Anthropic.MessageParam[] = await this.store.getApiMessages(sessionId);
@@ -574,12 +626,13 @@ export class AgentEngine {
               emit({ type: 'compaction', before: messages.length, after: requestMessages.length });
             }
 
+            const useCache = config.enablePromptCache !== false;
             const stream = this.getClient().messages.stream({
               model: MODEL,
               max_tokens: MAX_TOKENS,
-              system: activeSystemPrompt,
-              messages: requestMessages,
-              tools: allTools,
+              system: useCache ? withSystemCache(activeSystemPrompt) : activeSystemPrompt,
+              messages: useCache ? withMessagesCache(requestMessages) : requestMessages,
+              tools: useCache ? withToolsCache(allTools) : allTools,
               temperature: TEMPERATURE,
             });
 
@@ -596,9 +649,23 @@ export class AgentEngine {
         );
 
         const { input_tokens, output_tokens } = response.usage;
+        const cacheReadTokens = response.usage.cache_read_input_tokens ?? 0;
+        const cacheCreationTokens = response.usage.cache_creation_input_tokens ?? 0;
+        // totalIn은 fresh input only — cache는 별도 누적해 비용을 정확히 환산
         totalIn  += input_tokens;
         totalOut += output_tokens;
-        emit({ type: 'cost', apiCount, inputTokens: input_tokens, outputTokens: output_tokens, totalIn, totalOut });
+        totalCacheRead += cacheReadTokens;
+        totalCacheCreation += cacheCreationTokens;
+        emit({
+          type: 'cost',
+          apiCount,
+          inputTokens: input_tokens,
+          outputTokens: output_tokens,
+          cacheReadTokens,
+          cacheCreationTokens,
+          totalIn,
+          totalOut,
+        });
 
         const assistantMsg: Anthropic.MessageParam = {
           role: 'assistant',
@@ -687,7 +754,7 @@ export class AgentEngine {
 
           if (shouldStop) {
             await this.store.updateRunStatus(run.id, 'PAUSED_FOR_HUMAN', 'human');
-            emit({ type: 'done', finalStatus: 'waiting_for_human', apiCount, totalIn, totalOut });
+            emit({ type: 'done', finalStatus: 'waiting_for_human', apiCount, totalIn, totalOut, totalCacheRead, totalCacheCreation });
             return;
           }
 
@@ -738,7 +805,7 @@ export class AgentEngine {
         emit({ type: 'error', message: `예상치 못한 stop_reason: ${response.stop_reason}`, recoverable: false });
         await this.store.updateRunStatus(run.id, 'FAILED', 'error');
         await this.store.updateSessionStatus(sessionId, 'FAILED');
-        emit({ type: 'done', finalStatus: 'failed', apiCount, totalIn, totalOut });
+        emit({ type: 'done', finalStatus: 'failed', apiCount, totalIn, totalOut, totalCacheRead, totalCacheCreation });
         break;
       }
     } catch (e) {
@@ -751,15 +818,15 @@ export class AgentEngine {
       if (recoverable) {
         // 일시적 오류 — 세션을 READY로 되돌려 사용자가 재개할 수 있게 둠
         await this.store.updateSessionStatus(sessionId, 'READY');
-        emit({ type: 'done', finalStatus: 'interrupted', apiCount, totalIn, totalOut });
+        emit({ type: 'done', finalStatus: 'interrupted', apiCount, totalIn, totalOut, totalCacheRead, totalCacheCreation });
       } else {
         await this.store.updateSessionStatus(sessionId, 'FAILED');
-        emit({ type: 'done', finalStatus: 'failed', apiCount, totalIn, totalOut });
+        emit({ type: 'done', finalStatus: 'failed', apiCount, totalIn, totalOut, totalCacheRead, totalCacheCreation });
       }
       return;
     }
 
-    emit({ type: 'done', finalStatus: 'waiting_for_human', apiCount, totalIn, totalOut });
+    emit({ type: 'done', finalStatus: 'waiting_for_human', apiCount, totalIn, totalOut, totalCacheRead, totalCacheCreation });
   }
 
   private async runMockSession(params: {
@@ -818,9 +885,9 @@ export class AgentEngine {
     await this.store.markWaitingForHuman(session.id, artifact.id);
     await this.store.updateRunStatus(runId, 'PAUSED_FOR_HUMAN', 'human');
 
-    emit({ type: 'cost', apiCount: 1, inputTokens: 0, outputTokens: 0, totalIn: 0, totalOut: 0 });
+    emit({ type: 'cost', apiCount: 1, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, totalIn: 0, totalOut: 0 });
     emit({ type: 'artifact', artifactId: artifact.id, version: artifact.version, summary: artifact.summary ?? '' });
-    emit({ type: 'done', finalStatus: 'waiting_for_human', apiCount: 1, totalIn: 0, totalOut: 0 });
+    emit({ type: 'done', finalStatus: 'waiting_for_human', apiCount: 1, totalIn: 0, totalOut: 0, totalCacheRead: 0, totalCacheCreation: 0 });
   }
 }
 

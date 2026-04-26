@@ -6,8 +6,8 @@ export type AgentEvent =
   | { type: 'tool_result'; seq: number; isError: boolean; preview: string }
   | { type: 'submit' }
   | { type: 'artifact'; artifactId: string; version: number; summary: string }
-  | { type: 'cost'; apiCount: number; inputTokens: number; outputTokens: number; totalIn: number; totalOut: number }
-  | { type: 'done'; finalStatus: 'waiting_for_human' | 'failed' | 'interrupted'; apiCount: number; totalIn: number; totalOut: number }
+  | { type: 'cost'; apiCount: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number; totalIn: number; totalOut: number }
+  | { type: 'done'; finalStatus: 'waiting_for_human' | 'failed' | 'interrupted'; apiCount: number; totalIn: number; totalOut: number; totalCacheRead: number; totalCacheCreation: number }
   | { type: 'error'; message: string; recoverable: boolean }
   | { type: 'rate_limit'; waitSec: number; attempt: number }
   | { type: 'compaction'; before: number; after: number }

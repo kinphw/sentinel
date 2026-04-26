@@ -119,12 +119,16 @@ export default function Stage2Tab() {
       case 'artifact':
         addLog(`📝 보고서 초안 v${event.version} 생성 완료`, 'info');
         break;
-      case 'cost':
+      case 'cost': {
+        const cacheStr = event.cacheReadTokens > 0 || event.cacheCreationTokens > 0
+          ? `  [📦 cache: ${event.cacheReadTokens.toLocaleString()} read / ${event.cacheCreationTokens.toLocaleString()} write]`
+          : '';
         addLog(
-          `💰 API #${event.apiCount}: ${event.inputTokens.toLocaleString()}in / ${event.outputTokens.toLocaleString()}out  ${fmtCost(event.inputTokens, event.outputTokens)}`,
+          `💰 API #${event.apiCount}: ${event.inputTokens.toLocaleString()}in / ${event.outputTokens.toLocaleString()}out  ${fmtCost(event.inputTokens, event.outputTokens, event.cacheReadTokens, event.cacheCreationTokens)}${cacheStr}`,
           'cost',
         );
         break;
+      }
       case 'compaction':
         addLog(`🗜 컨텍스트 압축: ${event.before} → ${event.after}`, 'system');
         break;
@@ -146,9 +150,12 @@ export default function Stage2Tab() {
         );
         break;
       case 'done': {
-        const total = `${event.totalIn.toLocaleString()}in / ${event.totalOut.toLocaleString()}out`;
+        const cacheSummary = event.totalCacheRead > 0 || event.totalCacheCreation > 0
+          ? ` | 📦 ${event.totalCacheRead.toLocaleString()} cached read / ${event.totalCacheCreation.toLocaleString()} write`
+          : '';
+        const total = `${event.totalIn.toLocaleString()}in / ${event.totalOut.toLocaleString()}out${cacheSummary}`;
         addLog(
-          `✔ 종료 — API ${event.apiCount}회 | ${total} | ${fmtCost(event.totalIn, event.totalOut)}`,
+          `✔ 종료 — API ${event.apiCount}회 | ${total} | ${fmtCost(event.totalIn, event.totalOut, event.totalCacheRead, event.totalCacheCreation)}`,
           'cost',
         );
         setAwaiting(false);

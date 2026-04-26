@@ -70,10 +70,15 @@ async function startAgent(
       });
     }
 
+    // Stage 2는 도구 호출 없이 단발 응답으로 끝나므로 cache write의 25% premium만
+    // 부담하게 됨 → 캐시 끄기. Stage 1은 다회전 루프이므로 캐시 효과 큼.
+    const enablePromptCache = stage !== 'STAGE_2';
+
     await engine.runSession(sessionId, opts.feedback, {
       systemPrompt,
       useMcpTools,
       initialInputOverride,
+      enablePromptCache,
       onEvent: (event) => broadcast(sessionId, event),
     });
   } finally {
