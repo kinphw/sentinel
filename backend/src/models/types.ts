@@ -13,6 +13,7 @@ export type AgentMode      = 'live' | 'mock';
 export interface Issue {
   id: string;
   input_text: string;
+  owner_user_id: string | null;
   status: IssueStatus;
   current_stage: Stage | null;
   created_at: Date;

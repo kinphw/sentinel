@@ -9,6 +9,10 @@ import { ToolGateway } from './engine/ToolGateway.js';
 import { AgentEngine, buildStage2SystemPrompt } from './engine/AgentEngine.js';
 import type { AgentEvent } from './engine/AgentEngine.js';
 import { closePool } from './db/connection.js';
+import { closeJdbPool } from './db/jdb.js';
+import { handleSsoCallback, lookupSession, revokeSession } from './auth/AuthService.js';
+import { clearSessionCookie, readSessionCookie, setSessionCookie } from './auth/cookie.js';
+import { requireAdmin, requireAuth } from './auth/middleware.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: resolve(__dirname, '../../.env') });
@@ -132,7 +136,21 @@ function buildInitialInput(
 // ── Express 앱 ────────────────────────────────────────────────
 
 const app = express();
-app.use(cors());
+app.set('trust proxy', true); // Apache reverse proxy 뒤에서 동작
+
+const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+app.use(cors({
+  origin: (origin, cb) => {
+    // 같은 origin (서버사이드 호출, curl 등) 또는 허용 origin
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    cb(new Error(`origin not allowed: ${origin}`));
+  },
+  credentials: true,
+}));
 app.use(express.json());
 
 // 빌드된 프론트엔드 정적 파일 서빙
@@ -141,12 +159,87 @@ if (existsSync(frontendDist)) {
   app.use(express.static(frontendDist));
 }
 
+// ── 인증 라우트 (가드보다 위에 위치) ──────────────────────────
+
+const NEST_BASE_URL = process.env.NEST_BASE_URL ?? 'https://kinphw.test';
+
+function safeRedirectPath(path: string | undefined): string {
+  if (!path || path[0] !== '/') return '/';
+  if (path.length >= 2 && (path[1] === '/' || path[1] === '\\')) return '/';
+  if (path.length > 255) return '/';
+  return path;
+}
+
+// GET /auth/callback?ticket=...  — nest의 /sentinel/launch 가 보내는 콜백
+app.get('/auth/callback', async (req, res) => {
+  const ticket = String(req.query.ticket ?? '');
+  if (!ticket) {
+    res.status(400).send('ticket required');
+    return;
+  }
+  try {
+    const ip = (req.ip ?? null);
+    const ua = req.headers['user-agent'] ?? null;
+    const result = await handleSsoCallback({
+      rawTicket: ticket,
+      ipAddress: typeof ip === 'string' ? ip : null,
+      userAgent: typeof ua === 'string' ? ua : null,
+    });
+    setSessionCookie(res, result.rawToken, result.expiresAt);
+    res.redirect(302, safeRedirectPath(result.redirectPath));
+  } catch (e) {
+    // 사용자에게 직접 노출되는 페이지 — 로그에는 ticket 절대 남기지 말 것
+    const message = (e as Error).message ?? 'authentication failed';
+    res.status(401).send(`<h2>Sentinel 진입 불가</h2><p>${message}</p><p><a href="${NEST_BASE_URL}">메인으로 돌아가기</a></p>`);
+  }
+});
+
+// GET /auth/me  — 프론트가 부팅 시 호출. 미인증이면 401, 그 외엔 user JSON.
+app.get('/auth/me', async (req, res) => {
+  const token = readSessionCookie(req);
+  if (!token) {
+    res.status(401).json({ error: 'unauthenticated' });
+    return;
+  }
+  try {
+    const user = await lookupSession(token);
+    if (!user) {
+      clearSessionCookie(res);
+      res.status(401).json({ error: 'unauthenticated' });
+      return;
+    }
+    res.json({ user });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
+// POST /auth/logout — 자체 세션만 폐기 (nest 로그아웃은 별개)
+app.post('/auth/logout', async (req, res) => {
+  const token = readSessionCookie(req);
+  if (token) {
+    await revokeSession(token).catch(() => {});
+  }
+  clearSessionCookie(res);
+  res.json({ ok: true });
+});
+
+// /api/* 모든 라우트는 인증 필요 (단, /api/runtime은 health-check용으로 예외)
+app.use('/api', (req, res, next) => {
+  if (req.path === '/runtime') return next();
+  return requireAuth(req, res, next);
+});
+
+// /api/admin/* 는 admin만 접근 가능
+app.use('/api/admin', requireAdmin);
+
 // ── REST API ──────────────────────────────────────────────────
 
 // GET /api/runtime
 app.get('/api/runtime', (_req, res) => {
   res.json({
     port: PORT,
+    nestBaseUrl: NEST_BASE_URL,
   });
 });
 
@@ -155,7 +248,7 @@ app.post('/api/issues', async (req, res) => {
   try {
     const { inputText } = req.body as { inputText: string };
     if (!inputText?.trim()) { res.status(400).json({ error: 'inputText required' }); return; }
-    const issue = await store.createIssue(inputText.trim());
+    const issue = await store.createIssue(inputText.trim(), req.user!.sentinelUserId);
     res.json({ id: issue.id, inputText: issue.input_text, createdAt: issue.created_at });
   } catch (e) { res.status(500).json({ error: (e as Error).message }); }
 });
@@ -183,7 +276,9 @@ app.post('/api/sessions', async (req, res) => {
 
     if (!stage) { res.status(400).json({ error: 'stage required' }); return; }
 
-    const mode: 'live' | 'mock' = agentMode === 'mock' ? 'mock' : 'live';
+    // mock 모드는 admin만 사용 가능
+    const mode: 'live' | 'mock' =
+      (agentMode === 'mock' && req.user!.role === 'admin') ? 'mock' : 'live';
 
     let actualIssueId = issueId;
 
@@ -194,7 +289,7 @@ app.post('/api/sessions', async (req, res) => {
 
     // 직접 입력: 임시 이슈 생성
     if (!actualIssueId && manualInput) {
-      const issue = await store.createIssue(manualInput.trim());
+      const issue = await store.createIssue(manualInput.trim(), req.user!.sentinelUserId);
       actualIssueId = issue.id;
     }
 
@@ -296,7 +391,9 @@ app.post('/api/sessions/:id/feedback', async (req, res) => {
 app.get('/api/artifacts', async (req, res) => {
   try {
     const { stage, status, issueId } = req.query as Record<string, string>;
-    const artifacts = await store.getArtifactsList({ stage, status, issueId });
+    // admin은 전체, 그 외엔 자기 owner의 issue 소속 artifact만
+    const ownerUserId = req.user!.role === 'admin' ? undefined : req.user!.sentinelUserId;
+    const artifacts = await store.getArtifactsList({ stage, status, issueId, ownerUserId });
     res.json(artifacts);
   } catch (e) { res.status(500).json({ error: (e as Error).message }); }
 });
@@ -366,6 +463,7 @@ async function main(): Promise<void> {
     try {
       await gateway.disconnect();
       await closePool();
+      await closeJdbPool();
     } finally {
       process.exit(0);
     }

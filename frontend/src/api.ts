@@ -2,12 +2,21 @@ import type { AgentEvent, Artifact } from './types';
 
 const BASE = '/api';
 
+export class UnauthenticatedError extends Error {
+  constructor() {
+    super('unauthenticated');
+    this.name = 'UnauthenticatedError';
+  }
+}
+
 async function post<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify(body),
   });
+  if (res.status === 401) throw new UnauthenticatedError();
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error ?? res.statusText);
@@ -16,13 +25,15 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`);
+  const res = await fetch(`${BASE}${path}`, { credentials: 'include' });
+  if (res.status === 401) throw new UnauthenticatedError();
   if (!res.ok) throw new Error(res.statusText);
   return res.json();
 }
 
 async function del<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, { method: 'DELETE' });
+  const res = await fetch(`${BASE}${path}`, { method: 'DELETE', credentials: 'include' });
+  if (res.status === 401) throw new UnauthenticatedError();
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error ?? res.statusText);
@@ -30,12 +41,34 @@ async function del<T>(path: string): Promise<T> {
   return res.json();
 }
 
+// ── Auth ────────────────────────────────────────────────────
+
+export interface SentinelUser {
+  sentinelUserId: string;
+  centralUserId: number;
+  username: string;
+  nickname: string;
+  role: 'viewer' | 'operator' | 'admin';
+}
+
+export async function getMe(): Promise<SentinelUser> {
+  const res = await fetch('/auth/me', { credentials: 'include' });
+  if (res.status === 401) throw new UnauthenticatedError();
+  if (!res.ok) throw new Error(res.statusText);
+  const body = await res.json() as { user: SentinelUser };
+  return body.user;
+}
+
+export async function logout(): Promise<void> {
+  await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
+}
+
 export function createIssue(inputText: string) {
   return post<{ id: string; inputText: string }>('/issues', { inputText });
 }
 
 export function getRuntime() {
-  return get<{ port: number }>('/runtime');
+  return get<{ port: number; nestBaseUrl: string }>('/runtime');
 }
 
 export function createSession(params: {
@@ -74,7 +107,7 @@ export function getArtifacts(params: { stage?: string; status?: string; issueId?
 }
 
 export function streamSession(sessionId: string, onEvent: (e: AgentEvent) => void): EventSource {
-  const es = new EventSource(`${BASE}/sessions/${sessionId}/stream`);
+  const es = new EventSource(`${BASE}/sessions/${sessionId}/stream`, { withCredentials: true });
   es.onmessage = (e) => {
     try { onEvent(JSON.parse(e.data)); } catch { /* ignore */ }
   };

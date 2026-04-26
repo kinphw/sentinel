@@ -18,11 +18,11 @@ export class SessionStore {
 
   // ─── Issue ────────────────────────────────────────────────
 
-  async createIssue(inputText: string): Promise<Issue> {
+  async createIssue(inputText: string, ownerUserId: string | null = null): Promise<Issue> {
     const id = newId();
     await this.pool.query(
-      'INSERT INTO issues (id, input_text) VALUES (?, ?)',
-      [id, inputText],
+      'INSERT INTO issues (id, input_text, owner_user_id) VALUES (?, ?, ?)',
+      [id, inputText, ownerUserId],
     );
     return this.getIssue(id);
   }
@@ -170,6 +170,7 @@ export class SessionStore {
     stage?: string;
     status?: string;
     issueId?: string;
+    ownerUserId?: string;
     limit?: number;
   } = {}): Promise<Artifact[]> {
     const conditions: string[] = [];
@@ -177,6 +178,11 @@ export class SessionStore {
     if (params.stage)   { conditions.push('ss.stage = ?');    values.push(params.stage); }
     if (params.status)  { conditions.push('a.status = ?');    values.push(params.status); }
     if (params.issueId) { conditions.push('ss.issue_id = ?'); values.push(params.issueId); }
+    // ownerUserId가 주어지면 해당 사용자가 소유한 issue의 artifact만 노출
+    if (params.ownerUserId) {
+      conditions.push('EXISTS (SELECT 1 FROM issues i WHERE i.id = ss.issue_id AND i.owner_user_id = ?)');
+      values.push(params.ownerUserId);
+    }
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const [rows] = await this.pool.query<mysql.RowDataPacket[]>(
       `SELECT a.*, ss.stage AS session_stage, ss.issue_id
@@ -253,6 +259,7 @@ export class SessionStore {
     query?: string;
     stage?: string;
     onlyMock?: boolean;
+    ownerUserId?: string;
     limit?: number;
   } = {}): Promise<Array<{
     id: string;
@@ -295,6 +302,11 @@ export class SessionStore {
       conditions.push(
         `EXISTS (SELECT 1 FROM stage_sessions ssm WHERE ssm.issue_id = i.id AND ssm.agent_mode = 'mock')`,
       );
+    }
+
+    if (params.ownerUserId) {
+      conditions.push('i.owner_user_id = ?');
+      values.push(params.ownerUserId);
     }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -352,7 +364,7 @@ export class SessionStore {
     }));
   }
 
-  async getAdminIssueDetail(issueId: string): Promise<{
+  async getAdminIssueDetail(issueId: string, ownerUserId?: string): Promise<{
     issue: Issue & { is_mock: boolean };
     sessions: Array<StageSession & {
       artifacts: Artifact[];
@@ -362,6 +374,10 @@ export class SessionStore {
     }>;
   }> {
     const issue = await this.getIssue(issueId);
+    // 일반 사용자는 자신이 소유한 이슈만 조회 가능
+    if (ownerUserId && issue.owner_user_id !== ownerUserId) {
+      throw new Error(`Issue not found: ${issueId}`);
+    }
 
     const [sessionRows] = await this.pool.query<mysql.RowDataPacket[]>(
       'SELECT * FROM stage_sessions WHERE issue_id = ? ORDER BY created_at DESC',
